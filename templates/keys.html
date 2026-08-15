@@ -1,0 +1,6 @@
+{{define "content"}}
+<h1 class="page-title">API Key'ler</h1>
+<p class="muted">Key'ler <code>{{.Env.Slug}}</code> environment'ına bağlıdır. İstemci
+  <code>X-App-Key</code> başlığıyla gönderir; proje/environment göndermez.</p>
+{{template "keys_panel" .}}
+{{end}}

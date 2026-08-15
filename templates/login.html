@@ -1,0 +1,25 @@
+{{define "content"}}
+<div class="login-wrap">
+  <form class="card login-card" method="post" action="/ui/login">
+    <h1>confezy</h1>
+    <p class="muted">Yönetim paneline giriş</p>
+
+    {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+    <div class="field">
+      <label for="username">Kullanıcı adı</label>
+      <input id="username" name="username" value="{{.Username}}" required autofocus autocomplete="username">
+    </div>
+    <div class="field">
+      <label for="password">Şifre</label>
+      <input id="password" name="password" type="password" required autocomplete="current-password">
+    </div>
+
+    <button class="btn btn-primary block" type="submit">Giriş yap</button>
+
+    {{if .NoUsers}}
+    <p class="hint">Hiç hesap yok. Önce şunu çalıştır:<br><code>confezy admin-create -username admin</code></p>
+    {{end}}
+  </form>
+</div>
+{{end}}

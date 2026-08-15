@@ -1,0 +1,289 @@
+{{/* Fragments returned directly to HTMX and also embedded in full pages. */}}
+
+{{define "projects_panel"}}
+<div id="projects-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  <form class="card create-form" hx-post="/ui/projects" hx-target="#projects-panel" hx-swap="outerHTML">
+    <div class="field">
+      <label for="np-slug">Slug</label>
+      <input id="np-slug" name="slug" placeholder="odeme-servisi" required
+             pattern="[a-z0-9][a-z0-9_-]{0,62}" autocomplete="off">
+    </div>
+    <div class="field grow">
+      <label for="np-name">İsim</label>
+      <input id="np-name" name="name" placeholder="Ödeme Servisi" required autocomplete="off">
+    </div>
+    <button class="btn btn-primary" type="submit">Proje ekle</button>
+  </form>
+
+  {{if .Rows}}
+  <div class="grid">
+    {{range .Rows}}
+    <article class="card project-card">
+      <header>
+        <a class="card-title" href="/ui/p/{{.Project.Slug}}">{{.Project.Name}}</a>
+        <div class="spacer"></div>
+        <button class="btn btn-danger btn-sm"
+                hx-delete="/ui/p/{{.Project.Slug}}"
+                hx-confirm="{{.Project.Name}} ve altındaki her şey silinecek. Emin misin?"
+                hx-target="#projects-panel" hx-swap="outerHTML">Sil</button>
+      </header>
+      <code class="muted">{{.Project.Slug}}</code>
+      {{$slug := .Project.Slug}}
+      <div class="env-list">
+        {{range .Envs}}
+        <a class="env-pill" href="/ui/p/{{$slug}}/{{.Slug}}/flags">{{.Slug}}</a>
+        {{else}}
+        <span class="muted">environment yok</span>
+        {{end}}
+      </div>
+      <footer class="muted">{{.Created}}</footer>
+    </article>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="empty">Henüz proje yok. Yukarıdan ilkini ekle.</p>
+  {{end}}
+</div>
+{{end}}
+
+
+{{define "envs_panel"}}
+<div id="envs-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  <form class="card create-form" hx-post="/ui/p/{{.Project.Slug}}/environments"
+        hx-target="#envs-panel" hx-swap="outerHTML">
+    <div class="field grow">
+      <label for="ne-slug">Environment slug</label>
+      <input id="ne-slug" name="slug" placeholder="staging" required
+             pattern="[a-z0-9][a-z0-9_-]{0,62}" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" type="submit">Environment ekle</button>
+  </form>
+
+  <table class="data">
+    <thead>
+      <tr><th>Slug</th><th>Oluşturma</th><th>Son değişiklik</th><th class="right">İşlem</th></tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr>
+        <td><a class="env-pill" href="/ui/p/{{.Project}}/{{.Env.Slug}}/flags">{{.Env.Slug}}</a></td>
+        <td class="muted">{{.Created}}</td>
+        <td class="muted">{{.Updated}}</td>
+        <td class="right">
+          <button class="btn btn-danger btn-sm"
+                  hx-delete="/ui/p/{{.Project}}/{{.Env.Slug}}"
+                  hx-confirm="{{.Env.Slug}} environment'ı ve içindeki flag/config/key'ler silinecek. Emin misin?"
+                  hx-target="#envs-panel" hx-swap="outerHTML">Sil</button>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="4" class="empty">Environment yok.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+
+{{define "flags_panel"}}
+<div id="flags-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  <form class="card create-form" hx-post="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/flags"
+        hx-target="#flags-panel" hx-swap="outerHTML">
+    <div class="field">
+      <label for="nf-key">Key</label>
+      <input id="nf-key" name="key" placeholder="new_checkout" required
+             pattern="[a-z0-9_]{1,64}" autocomplete="off">
+    </div>
+    <div class="field grow">
+      <label for="nf-desc">Açıklama</label>
+      <input id="nf-desc" name="description" placeholder="isteğe bağlı" autocomplete="off">
+    </div>
+    <label class="field checkbox">
+      <input type="checkbox" name="enabled" value="1">
+      <span>Açık</span>
+    </label>
+    <button class="btn btn-primary" type="submit">Flag ekle</button>
+  </form>
+
+  <table class="data">
+    <thead>
+      <tr><th>Key</th><th>Durum</th><th>Açıklama</th><th>Sürüm</th><th>Son değişiklik</th><th class="right">İşlem</th></tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}{{template "flag_row" .}}{{else}}
+      <tr><td colspan="6" class="empty">Bu environment'ta flag yok.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+
+{{define "flag_row"}}
+<tr id="flag-{{.Flag.Key}}" class="{{if .Error}}row-error{{end}}">
+  <td>
+    <code class="key">{{.Flag.Key}}</code>
+    {{if .Error}}<div class="row-msg">{{.Error}}</div>{{end}}
+  </td>
+  <td>
+    <label class="switch">
+      <input type="checkbox" {{if .Flag.Enabled}}checked{{end}}
+             hx-put="/ui/p/{{.Project}}/{{.Env}}/flags/{{.Flag.Key}}/toggle"
+             hx-vals='{"expectedVersion": {{.Flag.Version}}}'
+             hx-target="closest tr" hx-swap="outerHTML">
+      <span class="slider"></span>
+    </label>
+  </td>
+  <td class="desc">{{.Flag.Description}}</td>
+  <td><span class="badge">v{{.Flag.Version}}</span></td>
+  <td class="muted">{{.Updated}}</td>
+  <td class="right">
+    <button class="btn btn-danger btn-sm"
+            hx-delete="/ui/p/{{.Project}}/{{.Env}}/flags/{{.Flag.Key}}"
+            hx-vals='{"expectedVersion": {{.Flag.Version}}}'
+            hx-confirm="{{.Flag.Key}} silinsin mi?"
+            hx-target="#flags-panel" hx-swap="outerHTML">Sil</button>
+  </td>
+</tr>
+{{end}}
+
+
+{{define "configs_panel"}}
+<div id="configs-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  <form class="card create-form column" hx-post="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/configs"
+        hx-target="#configs-panel" hx-swap="outerHTML">
+    <div class="row">
+      <div class="field">
+        <label for="nc-key">Key</label>
+        <input id="nc-key" name="key" placeholder="payment_rules" required
+               pattern="[a-z0-9_]{1,64}" autocomplete="off">
+      </div>
+      <div class="field grow">
+        <label for="nc-desc">Açıklama</label>
+        <input id="nc-desc" name="description" placeholder="isteğe bağlı" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
+      <label for="nc-value">JSON</label>
+      <textarea id="nc-value" name="value" rows="6" spellcheck="false"
+                oninput="validateJSON(this)">{}</textarea>
+      <div class="json-error"></div>
+    </div>
+    <button class="btn btn-primary" type="submit">Config ekle</button>
+  </form>
+
+  {{range .Cards}}{{template "config_card" .}}{{else}}
+  <p class="empty">Bu environment'ta config yok.</p>
+  {{end}}
+</div>
+{{end}}
+
+
+{{define "config_card"}}
+<article class="card config-card {{if .Error}}has-error{{end}}" id="config-{{.Config.Key}}">
+  <header>
+    <code class="key">{{.Config.Key}}</code>
+    <span class="badge">v{{.Config.Version}}</span>
+    <span class="muted">{{.Updated}}</span>
+    <div class="spacer"></div>
+    <button class="btn btn-danger btn-sm"
+            hx-delete="/ui/p/{{.Project}}/{{.Env}}/configs/{{.Config.Key}}"
+            hx-vals='{"expectedVersion": {{.Config.Version}}}'
+            hx-confirm="{{.Config.Key}} silinsin mi?"
+            hx-target="#configs-panel" hx-swap="outerHTML">Sil</button>
+  </header>
+
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  <form hx-put="/ui/p/{{.Project}}/{{.Env}}/configs/{{.Config.Key}}"
+        hx-target="closest article" hx-swap="outerHTML">
+    <input type="hidden" name="expectedVersion" value="{{.Config.Version}}">
+    <div class="field">
+      <label for="cd-{{.Config.Key}}">Açıklama</label>
+      <input id="cd-{{.Config.Key}}" name="description" value="{{.Config.Description}}" autocomplete="off">
+    </div>
+    <div class="field">
+      <label for="cv-{{.Config.Key}}">JSON</label>
+      <textarea id="cv-{{.Config.Key}}" name="value" rows="10" spellcheck="false"
+                oninput="validateJSON(this)">{{.Pretty}}</textarea>
+      <div class="json-error"></div>
+    </div>
+    <button class="btn btn-primary" type="submit">Kaydet</button>
+  </form>
+</article>
+{{end}}
+
+
+{{define "keys_panel"}}
+<div id="keys-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  {{if .NewKey}}
+  <div class="banner success key-reveal">
+    <strong>Key oluşturuldu.</strong>
+    <p>Bu değer bir daha gösterilmeyecek — şimdi kopyala ve güvenli bir yere kaydet.</p>
+    <div class="key-value">
+      <code>{{.NewKey}}</code>
+      <button class="btn btn-sm" type="button" onclick="copyText(this, {{.NewKey}})">Kopyala</button>
+    </div>
+  </div>
+  {{end}}
+
+  <form class="card create-form" hx-post="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/keys"
+        hx-target="#keys-panel" hx-swap="outerHTML">
+    <div class="field">
+      <label for="nk-scope">Scope</label>
+      <select id="nk-scope" name="scope">
+        <option value="read">read</option>
+        <option value="write">write</option>
+        <option value="admin">admin</option>
+      </select>
+    </div>
+    <div class="field grow">
+      <label for="nk-label">Etiket</label>
+      <input id="nk-label" name="label" placeholder="ios-uygulama" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" type="submit">Key oluştur</button>
+  </form>
+
+  <table class="data">
+    <thead>
+      <tr><th>Key</th><th>Scope</th><th>Etiket</th><th>Oluşturma</th><th>Durum</th><th class="right">İşlem</th></tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr class="{{if not .Key.Active}}revoked{{end}}">
+        <td><code class="key">{{.Key.KeyPrefix}}…</code></td>
+        <td><span class="badge scope-{{.Key.Scope}}">{{.Key.Scope}}</span></td>
+        <td>{{.Key.Label}}</td>
+        <td class="muted">{{.Created}}</td>
+        <td>{{if .Key.Active}}<span class="badge ok">aktif</span>{{else}}<span class="badge off">iptal · {{.Revoked}}</span>{{end}}</td>
+        <td class="right">
+          {{if .Key.Active}}
+          <button class="btn btn-danger btn-sm"
+                  hx-post="/ui/p/{{.Project}}/{{.Env}}/keys/{{.Key.ID}}/revoke"
+                  hx-confirm="Bu key iptal edilsin mi? Kullanan istemciler 401 almaya başlar."
+                  hx-target="#keys-panel" hx-swap="outerHTML">İptal et</button>
+          {{else}}
+          <button class="btn btn-ghost btn-sm"
+                  hx-delete="/ui/p/{{.Project}}/{{.Env}}/keys/{{.Key.ID}}"
+                  hx-confirm="Kayıt tamamen silinsin mi?"
+                  hx-target="#keys-panel" hx-swap="outerHTML">Kaydı sil</button>
+          {{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="6" class="empty">Bu environment'ta key yok.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}

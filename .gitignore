@@ -1,0 +1,10 @@
+# Derlenmiş binary
+/confezy
+
+# SQLite veritabanı ve WAL dosyaları
+*.db
+*.db-wal
+*.db-shm
+
+# macOS
+.DS_Store
