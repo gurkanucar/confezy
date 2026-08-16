@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -32,9 +33,37 @@ func (c *Client) Register(mux *http.ServeMux, requireRead func(http.Handler) htt
 	handle("GET /v1/configs/{key}", c.getConfig)
 }
 
-type snapshotResponse struct {
+// SnapshotBody is the /v1/snapshot response shape.
+type SnapshotBody struct {
 	Flags   map[string]bool            `json:"flags"`
 	Configs map[string]json.RawMessage `json:"configs"`
+}
+
+// BuildSnapshot assembles the snapshot for one environment. The admin UI calls
+// this too, so its snapshot panel shows exactly what a client would receive
+// rather than a second rendering that could drift.
+func BuildSnapshot(ctx context.Context, database *db.DB, envID int64) (SnapshotBody, error) {
+	flags, err := database.ListFlags(ctx, envID)
+	if err != nil {
+		return SnapshotBody{}, err
+	}
+	configs, err := database.ListConfigs(ctx, envID)
+	if err != nil {
+		return SnapshotBody{}, err
+	}
+
+	// Both maps are non-nil so they marshal to {} rather than null.
+	body := SnapshotBody{
+		Flags:   make(map[string]bool, len(flags)),
+		Configs: make(map[string]json.RawMessage, len(configs)),
+	}
+	for _, f := range flags {
+		body.Flags[f.Key] = f.Enabled
+	}
+	for _, cfg := range configs {
+		body.Configs[cfg.Key] = json.RawMessage(cfg.Value)
+	}
+	return body, nil
 }
 
 func (c *Client) snapshot(w http.ResponseWriter, r *http.Request) {
@@ -47,28 +76,12 @@ func (c *Client) snapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	flags, err := c.DB.ListFlags(r.Context(), ac.Environment.ID)
+	body, err := BuildSnapshot(r.Context(), c.DB, ac.Environment.ID)
 	if err != nil {
-		internalError(w, "list flags", err)
+		internalError(w, "build snapshot", err)
 		return
 	}
-	configs, err := c.DB.ListConfigs(r.Context(), ac.Environment.ID)
-	if err != nil {
-		internalError(w, "list configs", err)
-		return
-	}
-
-	resp := snapshotResponse{
-		Flags:   make(map[string]bool, len(flags)),
-		Configs: make(map[string]json.RawMessage, len(configs)),
-	}
-	for _, f := range flags {
-		resp.Flags[f.Key] = f.Enabled
-	}
-	for _, cfg := range configs {
-		resp.Configs[cfg.Key] = json.RawMessage(cfg.Value)
-	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
+	httpx.WriteJSON(w, http.StatusOK, body)
 }
 
 func (c *Client) listFlags(w http.ResponseWriter, r *http.Request) {

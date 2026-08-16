@@ -29,6 +29,7 @@ var pageFiles = []string{
 	"flags.html",
 	"configs.html",
 	"keys.html",
+	"snapshot.html",
 }
 
 // Server holds the parsed template sets and the dependencies handlers need.
@@ -105,6 +106,10 @@ func (s *Server) Register(mux *http.ServeMux) {
 	protected.HandleFunc("PUT /ui/p/{slug}/{env}/configs/{key}", s.updateConfig)
 	protected.HandleFunc("DELETE /ui/p/{slug}/{env}/configs/{key}", s.deleteConfig)
 
+	// Snapshot (read-only view of what clients receive).
+	protected.HandleFunc("GET /ui/p/{slug}/{env}/snapshot", s.snapshotPage)
+	protected.HandleFunc("GET /ui/p/{slug}/{env}/snapshot/panel", s.refreshSnapshot)
+
 	// API keys.
 	protected.HandleFunc("GET /ui/p/{slug}/{env}/keys", s.keysPage)
 	protected.HandleFunc("POST /ui/p/{slug}/{env}/keys", s.createKey)
@@ -142,7 +147,7 @@ func (s *Server) loginForm(w http.ResponseWriter, r *http.Request) {
 		log.Printf("ui: count users: %v", err)
 	}
 	s.renderPage(w, http.StatusOK, "login.html", LoginView{
-		Layout:  Layout{Title: "Giriş"},
+		Layout:  Layout{Title: "Sign in"},
 		NoUsers: count == 0,
 	})
 }
@@ -158,9 +163,9 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	fail := func() {
 		count, _ := s.db.CountUsers(r.Context())
 		s.renderPage(w, http.StatusUnauthorized, "login.html", LoginView{
-			Layout:   Layout{Title: "Giriş"},
+			Layout:   Layout{Title: "Sign in"},
 			Username: username,
-			Error:    "Kullanıcı adı veya şifre hatalı.",
+			Error:    "Incorrect username or password.",
 			NoUsers:  count == 0,
 		})
 	}
@@ -255,7 +260,7 @@ type envScope struct {
 func (s *Server) resolveProject(w http.ResponseWriter, r *http.Request) (model.Project, bool) {
 	project, err := s.db.GetProjectBySlug(r.Context(), r.PathValue("slug"))
 	if errors.Is(err, db.ErrNotFound) {
-		http.Error(w, "proje bulunamadı", http.StatusNotFound)
+		http.Error(w, "project not found", http.StatusNotFound)
 		return model.Project{}, false
 	}
 	if err != nil {
@@ -276,7 +281,7 @@ func (s *Server) resolveEnv(w http.ResponseWriter, r *http.Request) (envScope, b
 
 	env, err := s.db.GetEnvironment(r.Context(), project.ID, r.PathValue("env"))
 	if errors.Is(err, db.ErrNotFound) {
-		http.Error(w, "environment bulunamadı", http.StatusNotFound)
+		http.Error(w, "environment not found", http.StatusNotFound)
 		return envScope{}, false
 	}
 	if err != nil {

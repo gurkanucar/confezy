@@ -1,109 +1,149 @@
 # confezy
 
-Feature flag + JSON config servisi. Tek executable, SQLite (WAL), gömülü HTMX admin paneli.
-CGO yok — statik binary, sorunsuz cross-compile. Çalışma anında dışarıya hiçbir istek yok:
-HTMX, CSS ve şablonlar binary'ye gömülüdür.
+Feature flag and JSON config service. A single executable: SQLite (WAL) storage, a JSON API
+for clients, and an embedded HTMX admin panel. No CGO, so the binary is static and
+cross-compiles cleanly. Nothing is fetched at runtime — HTMX, the CSS and the templates are
+all compiled into the binary.
 
-## Kurulum
+## Build
 
 ```bash
 CGO_ENABLED=0 go build -ldflags="-s -w" -o confezy .
 
-# Başka bir platforma:
+# Cross-compile:
 GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w" -o confezy .
 ```
 
-## Çalıştırma
+## Run
 
 ```bash
-# 1) Admin hesabı (şifre terminalden sorulur, ekrana yazılmaz)
+# 1) Admin account (the password is read from the terminal, never echoed)
 ./confezy admin-create -username admin -db ./data.db
 
-# Şifreyi değiştirmek için:
+# To change it later:
 ./confezy admin-create -username admin -db ./data.db -reset
 
-# 2) Sunucu
+# 2) Server
 ./confezy serve -port 8080 -db ./data.db
 ```
 
 Panel: <http://localhost:8080/ui/login>
 
-`serve` bayrakları: `-port` (varsayılan 8080), `-host` (varsayılan tüm arayüzler), `-db`
-(varsayılan `./data.db`). Migration'lar her açılışta otomatik uygulanır.
+`serve` flags: `-port` (default 8080), `-host` (default all interfaces), `-db` (default
+`./data.db`). Migrations run automatically on every start.
 
-### Admin hesabını ortam değişkeninden vermek
+### Configuration via environment
 
-Docker/k8s gibi interaktif komut çalıştırmanın zahmetli olduğu yerlerde `serve`, hesabı
-açılışta kendisi oluşturabilir:
+A `.env` file in the working directory is loaded at startup (`CONFEZY_ENV_FILE` overrides the
+path). Real environment variables always win over the file. Start from the template:
 
 ```bash
-CONFEZY_ADMIN_USERNAME=admin \
-CONFEZY_ADMIN_PASSWORD=cok-gizli-bir-sifre \
-./confezy serve -port 8080 -db ./data.db
+cp .env.example .env
 ```
 
-| Değişken | Anlamı |
+| Variable | Meaning |
 |---|---|
-| `CONFEZY_ADMIN_USERNAME` | 3–64 karakter |
-| `CONFEZY_ADMIN_PASSWORD` | en az 8 karakter |
-| `CONFEZY_ADMIN_PASSWORD_FILE` | Şifreyi dosyadan okur; verilirse `CONFEZY_ADMIN_PASSWORD` yerine geçer |
+| `CONFEZY_ADMIN_USERNAME` | 3–64 characters |
+| `CONFEZY_ADMIN_PASSWORD` | at least 8 characters |
+| `CONFEZY_ADMIN_PASSWORD_FILE` | read the password from a file; takes precedence over `CONFEZY_ADMIN_PASSWORD` |
+| `CONFEZY_SEED_DATA` | insert the demo dataset. Default `1` |
+| `CONFEZY_PORT` | host port published by Docker Compose |
 
-Davranış:
+Admin bootstrap behaviour:
 
-- Hesap **yoksa** oluşturulur (argon2id ile hash'lenir, düz şifre saklanmaz).
-- Hesap **varsa şifresi ezilmez** — restart, `-reset` ile yaptığın bir şifre değişikliğini
-  geri almaz. Değiştirmek için `admin-create -username <ad> -reset` kullan.
-- İkisinden yalnızca biri verilirse ya da şifre/kullanıcı adı kurallara uymuyorsa sunucu
-  net bir hatayla açılmaz.
-- Hiçbiri verilmemişse ve hiç hesap yoksa açılışta uyarı loglanır.
+- If the account does **not** exist it is created (argon2id hashed; the plaintext is never
+  stored).
+- If it **does** exist its password is left alone — a restart must not undo a password you
+  changed with `-reset`, nor resurrect one you rotated.
+- Setting only one of the two, or a password that is too short, fails the start with a clear
+  message.
+- With neither set and no account present, a warning is logged.
 
-Şifre ortam değişkenindeyse `docker inspect`, `/proc/<pid>/environ` ve alt süreçler
-üzerinden görülebilir; secret yönetimi olan bir ortamda `CONFEZY_ADMIN_PASSWORD_FILE`
-tercih et (Docker/k8s secret'ları dosya olarak mount edilir).
+If the password lives in an environment variable it is visible through `docker inspect` and
+`/proc/<pid>/environ`. Where secret management exists, prefer `CONFEZY_ADMIN_PASSWORD_FILE` —
+Docker and Kubernetes secrets are mounted as files.
 
-## Kavramlar
+### Demo data
+
+On its first start against an **empty** database, confezy inserts a demo dataset so the admin
+panel has something to show: three projects, six environments, flags and configs covering
+every JSON shape and both key-length extremes, plus API keys in every scope including a
+revoked one.
+
+It only ever touches a database with no projects in it, so restarts never duplicate rows and
+real data is never overwritten. Turn it off for a clean install:
+
+```bash
+CONFEZY_SEED_DATA=0 ./confezy serve
+```
+
+The seeded API keys are **display-only**: their stored hashes match no real key, so none of
+them authenticate anything. Create a working key from the panel.
+
+## Docker
+
+```bash
+cp .env.example .env      # edit the admin password first
+docker compose up -d --build
+```
+
+The image is multi-stage: a Go builder and an Alpine runtime running as a non-root user
+(uid 10001). The database lives in the `confezy-data` named volume at `/data`, so it survives
+the container. `/healthz` backs both the Dockerfile `HEALTHCHECK` and the Compose health
+check. `.env` is excluded from the build context, so no secret lands in an image layer.
+
+Without Compose:
+
+```bash
+docker build -t confezy .
+docker run -d -p 8080:8080 -v confezy-data:/data \
+  -e CONFEZY_ADMIN_USERNAME=admin -e CONFEZY_ADMIN_PASSWORD=change-this-password \
+  confezy
+```
+
+## Concepts
 
 ```
 Project
-└── Environment (proje açılınca "prod" otomatik oluşur)
+└── Environment ("prod" is created automatically with the project)
     ├── Feature Flags   (bool)
-    ├── JSON Configs    (herhangi bir geçerli JSON)
+    ├── JSON Configs    (any valid JSON)
     └── API Keys        (read / write / admin)
 ```
 
-Flag ve config key formatı: `^[a-z0-9_]{1,64}$`
-Proje ve environment slug formatı: `^[a-z0-9][a-z0-9_-]{0,62}$`
+Flag and config key format: `^[a-z0-9_]{1,64}$`
+Project and environment slug format: `^[a-z0-9][a-z0-9_-]{0,62}$`
 
-Her flag ve config'in kendi `version`'ı vardır ve her güncellemede 1 artar. Ayrıca her
-environment'ın görünmez bir `updated_at` damgası vardır; altındaki herhangi bir değişiklikte
-güncellenir ve client API'nin `ETag`'ini besler. Damga her yazmada **kesin olarak artar**
-(`MAX(now, updated_at + 1)`) — aksi halde aynı saniye içindeki iki yazma aynı ETag'i üretir
-ve yoklayan istemci değişikliği hiç göremezdi.
+Every flag and config carries its own `version`, incremented on each update. Each environment
+also carries an invisible `updated_at` stamp, bumped by any write beneath it, which is the
+sole input to the client API `ETag`. The stamp is **strictly increasing**
+(`MAX(now, updated_at + 1)`) — otherwise two writes in the same second would produce the same
+ETag and a polling client would never see the change.
 
-## API key'ler
+## API keys
 
-Format: `ff_{scope}_{env-slug}_{24 karakter}` — örn. `ff_read_prod_a1b2c3d4e5f6g7h8i9j0k1l2`
+Format: `ff_{scope}_{env-slug}_{24 characters}` — e.g. `ff_read_prod_a1b2c3d4e5f6g7h8i9j0k1l2`
 
-Key **yalnızca oluşturulduğu anda bir kez** gösterilir; veritabanında SHA-256 hash'i ve ilk
-12 karakteri saklanır. Key bir environment'a bağlıdır, bu yüzden istemci proje/environment
-bilgisi göndermez — sadece başlığı gönderir:
+A key is shown **once**, at creation. Only its SHA-256 hash and first 12 characters are
+stored. A key is bound to one environment, so clients never name a project or environment —
+they send the header:
 
 ```
 X-App-Key: ff_read_prod_a1b2c3d4e5f6g7h8i9j0k1l2
 ```
 
-| Scope | Yetki |
+| Scope | Grants |
 |---|---|
 | `read` | Client API (GET) |
 | `write` | Client API + Management API |
-| `admin` | `write` ile aynı (v0.1) |
+| `admin` | same as `write` in v0.1 |
 
-Panelden iptal edilen (revoke) key anında `401` almaya başlar.
+Revoking a key in the panel makes it return `401` immediately.
 
 ## Client API
 
-Read key yeterlidir. Tüm cevaplar `ETag` taşır; `If-None-Match` ile tekrar sorulduğunda
-değişiklik yoksa gövdesiz `304` döner.
+A read key is enough. Every response carries an `ETag`; ask again with `If-None-Match` and an
+unchanged environment answers `304` with an empty body.
 
 ```http
 GET /v1/snapshot            → { "flags": {...}, "configs": {...} }
@@ -132,20 +172,21 @@ curl -H "X-App-Key: $KEY" http://localhost:8080/v1/snapshot
 }
 ```
 
-### Önerilen istemci pattern'i
+### Recommended client pattern
 
-1. Açılışta `/v1/snapshot` çek; cevabı **ve** `ETag`'i lokalde sakla.
-2. Periyodik olarak (örn. 60 sn) veya uygulama foreground'a döndüğünde `If-None-Match`
-   başlığıyla tekrar sor.
-3. `304` → hiçbir şey yapma. `200` → yeni snapshot'ı kaydet.
-4. Servise ulaşılamazsa: lokal cache'i kullan; o da yoksa koddaki güvenli default'a düş.
+1. On startup fetch `/v1/snapshot` and store both the body **and** the `ETag` locally.
+2. Poll periodically (say every 60s), or when the app returns to the foreground, sending
+   `If-None-Match`.
+3. `304` → do nothing. `200` → replace the stored snapshot.
+4. If the service is unreachable: use the local cache; if there is none, fall back to safe
+   defaults in code.
 
 ```bash
-# İlk istek
+# First request
 curl -D- -H "X-App-Key: $KEY" http://localhost:8080/v1/snapshot
 # ETag: "1786814026"
 
-# Sonraki yoklama → değişiklik yoksa 304, gövde boş
+# Later poll → 304 with an empty body while nothing has changed
 curl -o /dev/null -w '%{http_code}\n' \
   -H "X-App-Key: $KEY" -H 'If-None-Match: "1786814026"' \
   http://localhost:8080/v1/snapshot
@@ -153,7 +194,7 @@ curl -o /dev/null -w '%{http_code}\n' \
 
 ## Management API
 
-Write (veya admin) key gerekir. Key'in bağlı olduğu environment üzerinde çalışır.
+Requires a write (or admin) key, and operates on the environment that key is bound to.
 
 ```http
 POST   /v1/manage/flags               { "key", "enabled", "description?" }
@@ -165,25 +206,27 @@ PUT    /v1/manage/configs/{key}       { "value", "description?", "expectedVersio
 DELETE /v1/manage/configs/{key}       { "expectedVersion" }
 ```
 
-Kurallar:
+Rules:
 
-- `expectedVersion` PUT ve DELETE'te zorunludur. `DELETE` için gövde yerine
-  `?expectedVersion=2` query parametresi de kullanılabilir.
-- Uyuşmazsa `409` döner ve cevap kaydın **güncel halini** `current` altında taşır.
-- Config `value` kaydedilmeden önce doğrulanır; geçersiz JSON `400` alır.
-- Başarılı yazma `version`'ı +1 yapar ve aynı transaction'da environment damgasını günceller.
-- Hata formatı her yerde aynı:
+- `expectedVersion` is required on PUT and DELETE. For `DELETE` it may also be given as the
+  `?expectedVersion=2` query parameter instead of a body.
+- On a mismatch the response is `409` and carries the record as it currently stands under
+  `current`.
+- A config `value` is validated before it is stored; invalid JSON gets `400`.
+- A successful write increments `version` and bumps the environment stamp in the same
+  transaction.
+- The error shape is the same everywhere:
 
 ```json
 { "error": { "code": "version_conflict", "message": "..." } }
 ```
 
-Kodlar: `unauthorized`, `forbidden`, `not_found`, `invalid_request`, `already_exists`,
+Codes: `unauthorized`, `forbidden`, `not_found`, `invalid_request`, `already_exists`,
 `version_conflict`, `internal_error`.
 
 ```bash
 curl -X POST -H "X-App-Key: $WRITE_KEY" -H 'Content-Type: application/json' \
-  -d '{"key":"new_checkout","enabled":true,"description":"Yeni ödeme akışı"}' \
+  -d '{"key":"new_checkout","enabled":true,"description":"Rewritten checkout flow"}' \
   http://localhost:8080/v1/manage/flags
 
 curl -X PUT -H "X-App-Key: $WRITE_KEY" -H 'Content-Type: application/json' \
@@ -191,52 +234,58 @@ curl -X PUT -H "X-App-Key: $WRITE_KEY" -H 'Content-Type: application/json' \
   http://localhost:8080/v1/manage/flags/new_checkout
 ```
 
-## Admin paneli
+## Admin panel
 
-Session cookie ile korunur; Management API'den bağımsızdır (API'ler saf JSON döner, panel
-HTML fragment'ı). Sayfalar:
+Guarded by a session cookie and independent of the Management API: the JSON endpoints stay
+pure JSON, the panel returns HTML fragments.
 
 ```
-/ui/login                    Giriş
-/ui/projects                 Proje listesi + yeni proje
-/ui/p/{slug}                 Environment listesi + yeni environment
-/ui/p/{slug}/{env}/flags     Flag listesi, toggle switch'ler
-/ui/p/{slug}/{env}/configs   Config listesi + JSON editör
-/ui/p/{slug}/{env}/keys      API key listesi, oluştur / iptal et
+/ui/login                      Sign in
+/ui/projects                   Projects + create
+/ui/p/{slug}                   Environments + create
+/ui/p/{slug}/{env}/flags       Flags, toggle switches
+/ui/p/{slug}/{env}/configs     Configs + JSON editor
+/ui/p/{slug}/{env}/keys        API keys, create / revoke
+/ui/p/{slug}/{env}/snapshot    The exact document clients receive, plus its ETag
 ```
 
-Dark/light tema sağ üstteki düğmeden; tercih `localStorage`'da tutulur ve sayfa boyanmadan
-önce uygulanır. Başka birinin değişikliğinin üzerine yazmayı `expectedVersion` engeller:
-çakışmada satır kırmızıya döner ve "Sayfa güncel değil, yenileyin" uyarısı çıkar.
+Dark and light themes toggle from the top right; the choice is kept in `localStorage` and
+applied before the page paints. `expectedVersion` prevents overwriting someone else's change:
+on a conflict the row turns red and says the page is out of date.
 
-## Mimari notlar
+## Architecture notes
 
-- **İki ayrı `*sql.DB`**: okuma havuzu 8 bağlantı, yazma tarafı tek bağlantı. Yazmalar
-  uygulama seviyesinde serialize olur, `SQLITE_BUSY` görülmez.
-- PRAGMA'lar DSN üzerinden her bağlantıya uygulanır:
-  `journal_mode(WAL)`, `busy_timeout(10000)`, `synchronous(NORMAL)`, `foreign_keys(ON)`.
-- Flag/config değişikliği ve environment damgasının güncellenmesi **tek transaction**.
-- Admin şifresi argon2id, API key'ler SHA-256 ile saklanır.
-- Session cookie `HttpOnly` + `SameSite=Lax`; HTTPS üzerinden gelen isteklerde `Secure`.
+- **Two `*sql.DB` handles**: a read pool of 8 connections and a single write connection.
+  Writes serialise at the application level, so `SQLITE_BUSY` never appears.
+- PRAGMAs are applied per connection through the DSN: `journal_mode(WAL)`,
+  `busy_timeout(10000)`, `synchronous(NORMAL)`, `foreign_keys(ON)`.
+- A flag or config change and the environment stamp update share **one transaction**.
+- Admin passwords are argon2id; API keys are stored as SHA-256.
+- The session cookie is `HttpOnly` + `SameSite=Lax`, and `Secure` over HTTPS.
+- The admin snapshot panel calls the same `BuildSnapshot` the API uses, so the two cannot
+  drift apart.
 
-## Proje yapısı
+## Layout
 
 ```
 confezy/
-├── main.go                  CLI: serve, admin-create
-├── embed.go                 templates/ ve static/ gömme
+├── main.go                  CLI: serve, admin-create; .env loading; admin bootstrap
+├── embed.go                 embeds templates/ and static/
+├── Dockerfile               multi-stage build, non-root Alpine runtime
+├── docker-compose.yml
+├── .env.example             copy to .env
 ├── internal/
-│   ├── db/                  bağlantılar, migration runner, tüm sorgular
-│   ├── model/               domain struct'ları + validasyon
-│   ├── auth/                argon2id şifre, API key + scope, session
-│   ├── httpx/               ortak JSON cevap/hata zarfı
+│   ├── db/                  connections, migration runner, seed data, all queries
+│   ├── model/               domain structs + validation
+│   ├── auth/                argon2id passwords, API keys + scopes, sessions
+│   ├── httpx/               shared JSON response and error envelope
 │   ├── api/                 client.go, manage.go, etag.go
-│   └── ui/                  HTMX panel handler'ları
-├── templates/               base, sayfalar, partials (fragment'lar)
+│   └── ui/                  admin panel handlers
+├── templates/               base, pages, partials (fragments)
 └── static/                  htmx.min.js, app.css
 ```
 
-## v0.2'ye ertelenenler
+## Deferred to v0.2
 
-Webhook + HMAC + retry/delivery log, rate limiting, key rotate, import/export, SSE,
-tag/filtreleme, JSON Merge Patch, history/rollback.
+Webhooks + HMAC + retry/delivery log, rate limiting, key rotation, import/export, SSE,
+tags/filtering, JSON Merge Patch, history/rollback.

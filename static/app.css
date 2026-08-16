@@ -146,7 +146,9 @@ code, .key { font-family: var(--mono); font-size: .88em; }
 
 /* ---------- layout ---------- */
 
-.page { max-width: 1080px; margin: 0 auto; padding: 24px 20px 64px; }
+/* Full width on purpose: these are dense tables and JSON editors, and the
+   horizontal room is worth more than a centred column. */
+.page { width: 100%; margin: 0; padding: 24px 24px 64px; }
 .page-title { font-size: 22px; margin: 0 0 4px; letter-spacing: -.01em; }
 .page-title + .muted { margin-top: 0; }
 
@@ -274,7 +276,22 @@ table.data th {
 
 table.data td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 table.data tr:last-child td { border-bottom: none; }
-table.data td.desc { color: var(--fg-muted); }
+
+/* Keys run up to 64 characters. max-width on a <td> is ignored in an auto
+   table layout, so the bounds go on the inline-block inside the cell. The
+   min-width matters as much as the max: with the description column claiming
+   all remaining space, a breakable key would otherwise collapse to one
+   character per line. */
+table.data .key {
+  display: inline-block;
+  min-width: 22ch;
+  max-width: 44ch;
+  overflow-wrap: anywhere;
+}
+table.data td.desc { width: 100%; color: var(--fg-muted); }
+
+/* Timestamps are fixed width; wrapping them onto three lines helps nobody. */
+table.data td.muted { white-space: nowrap; }
 
 tr.revoked { opacity: .55; }
 
@@ -360,6 +377,25 @@ a.env-pill:hover { border-color: var(--accent); color: var(--accent); text-decor
 .switch input:checked + .slider { background: var(--accent); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 .switch input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- snapshot ---------- */
+
+.snapshot-card header { flex-wrap: wrap; gap: 8px; }
+
+.snapshot-json {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.5;
+  /* Long config values must scroll inside the block, never widen the page. */
+  overflow-x: auto;
+  max-height: 70vh;
+  overflow-y: auto;
+}
 
 /* ---------- config cards ---------- */
 

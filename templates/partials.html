@@ -7,14 +7,14 @@
   <form class="card create-form" hx-post="/ui/projects" hx-target="#projects-panel" hx-swap="outerHTML">
     <div class="field">
       <label for="np-slug">Slug</label>
-      <input id="np-slug" name="slug" placeholder="odeme-servisi" required
+      <input id="np-slug" name="slug" placeholder="checkout" required
              pattern="[a-z0-9][a-z0-9_-]{0,62}" autocomplete="off">
     </div>
     <div class="field grow">
-      <label for="np-name">İsim</label>
-      <input id="np-name" name="name" placeholder="Ödeme Servisi" required autocomplete="off">
+      <label for="np-name">Name</label>
+      <input id="np-name" name="name" placeholder="Checkout Service" required autocomplete="off">
     </div>
-    <button class="btn btn-primary" type="submit">Proje ekle</button>
+    <button class="btn btn-primary" type="submit">Add project</button>
   </form>
 
   {{if .Rows}}
@@ -26,8 +26,8 @@
         <div class="spacer"></div>
         <button class="btn btn-danger btn-sm"
                 hx-delete="/ui/p/{{.Project.Slug}}"
-                hx-confirm="{{.Project.Name}} ve altındaki her şey silinecek. Emin misin?"
-                hx-target="#projects-panel" hx-swap="outerHTML">Sil</button>
+                hx-confirm="{{.Project.Name}} and everything under it will be deleted. Are you sure?"
+                hx-target="#projects-panel" hx-swap="outerHTML">Delete</button>
       </header>
       <code class="muted">{{.Project.Slug}}</code>
       {{$slug := .Project.Slug}}
@@ -35,7 +35,7 @@
         {{range .Envs}}
         <a class="env-pill" href="/ui/p/{{$slug}}/{{.Slug}}/flags">{{.Slug}}</a>
         {{else}}
-        <span class="muted">environment yok</span>
+        <span class="muted">no environments</span>
         {{end}}
       </div>
       <footer class="muted">{{.Created}}</footer>
@@ -43,7 +43,7 @@
     {{end}}
   </div>
   {{else}}
-  <p class="empty">Henüz proje yok. Yukarıdan ilkini ekle.</p>
+  <p class="empty">No projects yet. Add the first one above.</p>
   {{end}}
 </div>
 {{end}}
@@ -60,12 +60,12 @@
       <input id="ne-slug" name="slug" placeholder="staging" required
              pattern="[a-z0-9][a-z0-9_-]{0,62}" autocomplete="off">
     </div>
-    <button class="btn btn-primary" type="submit">Environment ekle</button>
+    <button class="btn btn-primary" type="submit">Add environment</button>
   </form>
 
   <table class="data">
     <thead>
-      <tr><th>Slug</th><th>Oluşturma</th><th>Son değişiklik</th><th class="right">İşlem</th></tr>
+      <tr><th>Slug</th><th>Created</th><th>Last change</th><th class="right">Actions</th></tr>
     </thead>
     <tbody>
       {{range .Rows}}
@@ -76,12 +76,12 @@
         <td class="right">
           <button class="btn btn-danger btn-sm"
                   hx-delete="/ui/p/{{.Project}}/{{.Env.Slug}}"
-                  hx-confirm="{{.Env.Slug}} environment'ı ve içindeki flag/config/key'ler silinecek. Emin misin?"
-                  hx-target="#envs-panel" hx-swap="outerHTML">Sil</button>
+                  hx-confirm="{{.Env.Slug}} and its flags, configs and keys will be deleted. Are you sure?"
+                  hx-target="#envs-panel" hx-swap="outerHTML">Delete</button>
         </td>
       </tr>
       {{else}}
-      <tr><td colspan="4" class="empty">Environment yok.</td></tr>
+      <tr><td colspan="4" class="empty">No environments.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -101,23 +101,23 @@
              pattern="[a-z0-9_]{1,64}" autocomplete="off">
     </div>
     <div class="field grow">
-      <label for="nf-desc">Açıklama</label>
-      <input id="nf-desc" name="description" placeholder="isteğe bağlı" autocomplete="off">
+      <label for="nf-desc">Description</label>
+      <input id="nf-desc" name="description" placeholder="optional" autocomplete="off">
     </div>
     <label class="field checkbox">
       <input type="checkbox" name="enabled" value="1">
-      <span>Açık</span>
+      <span>Enabled</span>
     </label>
-    <button class="btn btn-primary" type="submit">Flag ekle</button>
+    <button class="btn btn-primary" type="submit">Add flag</button>
   </form>
 
   <table class="data">
     <thead>
-      <tr><th>Key</th><th>Durum</th><th>Açıklama</th><th>Sürüm</th><th>Son değişiklik</th><th class="right">İşlem</th></tr>
+      <tr><th>Key</th><th>State</th><th>Description</th><th>Version</th><th>Last change</th><th class="right">Actions</th></tr>
     </thead>
     <tbody>
       {{range .Rows}}{{template "flag_row" .}}{{else}}
-      <tr><td colspan="6" class="empty">Bu environment'ta flag yok.</td></tr>
+      <tr><td colspan="6" class="empty">No flags in this environment.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -147,8 +147,8 @@
     <button class="btn btn-danger btn-sm"
             hx-delete="/ui/p/{{.Project}}/{{.Env}}/flags/{{.Flag.Key}}"
             hx-vals='{"expectedVersion": {{.Flag.Version}}}'
-            hx-confirm="{{.Flag.Key}} silinsin mi?"
-            hx-target="#flags-panel" hx-swap="outerHTML">Sil</button>
+            hx-confirm="{{.Flag.Key}} will be deleted. Are you sure?"
+            hx-target="#flags-panel" hx-swap="outerHTML">Delete</button>
   </td>
 </tr>
 {{end}}
@@ -167,8 +167,8 @@
                pattern="[a-z0-9_]{1,64}" autocomplete="off">
       </div>
       <div class="field grow">
-        <label for="nc-desc">Açıklama</label>
-        <input id="nc-desc" name="description" placeholder="isteğe bağlı" autocomplete="off">
+        <label for="nc-desc">Description</label>
+        <input id="nc-desc" name="description" placeholder="optional" autocomplete="off">
       </div>
     </div>
     <div class="field">
@@ -177,11 +177,11 @@
                 oninput="validateJSON(this)">{}</textarea>
       <div class="json-error"></div>
     </div>
-    <button class="btn btn-primary" type="submit">Config ekle</button>
+    <button class="btn btn-primary" type="submit">Add config</button>
   </form>
 
   {{range .Cards}}{{template "config_card" .}}{{else}}
-  <p class="empty">Bu environment'ta config yok.</p>
+  <p class="empty">No configs in this environment.</p>
   {{end}}
 </div>
 {{end}}
@@ -197,8 +197,8 @@
     <button class="btn btn-danger btn-sm"
             hx-delete="/ui/p/{{.Project}}/{{.Env}}/configs/{{.Config.Key}}"
             hx-vals='{"expectedVersion": {{.Config.Version}}}'
-            hx-confirm="{{.Config.Key}} silinsin mi?"
-            hx-target="#configs-panel" hx-swap="outerHTML">Sil</button>
+            hx-confirm="{{.Config.Key}} will be deleted. Are you sure?"
+            hx-target="#configs-panel" hx-swap="outerHTML">Delete</button>
   </header>
 
   {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
@@ -207,7 +207,7 @@
         hx-target="closest article" hx-swap="outerHTML">
     <input type="hidden" name="expectedVersion" value="{{.Config.Version}}">
     <div class="field">
-      <label for="cd-{{.Config.Key}}">Açıklama</label>
+      <label for="cd-{{.Config.Key}}">Description</label>
       <input id="cd-{{.Config.Key}}" name="description" value="{{.Config.Description}}" autocomplete="off">
     </div>
     <div class="field">
@@ -216,9 +216,31 @@
                 oninput="validateJSON(this)">{{.Pretty}}</textarea>
       <div class="json-error"></div>
     </div>
-    <button class="btn btn-primary" type="submit">Kaydet</button>
+    <button class="btn btn-primary" type="submit">Save</button>
   </form>
 </article>
+{{end}}
+
+
+{{define "snapshot_panel"}}
+<div id="snapshot-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+
+  <div class="card snapshot-card">
+    <header>
+      <span class="badge">{{.FlagCount}} flags</span>
+      <span class="badge">{{.ConfigCount}} configs</span>
+      <span class="muted">ETag <code>{{.ETag}}</code></span>
+      <div class="spacer"></div>
+      <button class="btn btn-sm" type="button" onclick="copyText(this, {{.JSON}})">Copy JSON</button>
+      <button class="btn btn-sm"
+              hx-get="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/snapshot/panel"
+              hx-target="#snapshot-panel" hx-swap="outerHTML">Refresh</button>
+    </header>
+
+    <pre class="snapshot-json"><code>{{.JSON}}</code></pre>
+  </div>
+</div>
 {{end}}
 
 
@@ -228,11 +250,11 @@
 
   {{if .NewKey}}
   <div class="banner success key-reveal">
-    <strong>Key oluşturuldu.</strong>
-    <p>Bu değer bir daha gösterilmeyecek — şimdi kopyala ve güvenli bir yere kaydet.</p>
+    <strong>Key created.</strong>
+    <p>This value will never be shown again — copy it now and store it somewhere safe.</p>
     <div class="key-value">
       <code>{{.NewKey}}</code>
-      <button class="btn btn-sm" type="button" onclick="copyText(this, {{.NewKey}})">Kopyala</button>
+      <button class="btn btn-sm" type="button" onclick="copyText(this, {{.NewKey}})">Copy</button>
     </div>
   </div>
   {{end}}
@@ -248,15 +270,15 @@
       </select>
     </div>
     <div class="field grow">
-      <label for="nk-label">Etiket</label>
-      <input id="nk-label" name="label" placeholder="ios-uygulama" autocomplete="off">
+      <label for="nk-label">Label</label>
+      <input id="nk-label" name="label" placeholder="ios-app" autocomplete="off">
     </div>
-    <button class="btn btn-primary" type="submit">Key oluştur</button>
+    <button class="btn btn-primary" type="submit">Create key</button>
   </form>
 
   <table class="data">
     <thead>
-      <tr><th>Key</th><th>Scope</th><th>Etiket</th><th>Oluşturma</th><th>Durum</th><th class="right">İşlem</th></tr>
+      <tr><th>Key</th><th>Scope</th><th>Label</th><th>Created</th><th>State</th><th class="right">Actions</th></tr>
     </thead>
     <tbody>
       {{range .Rows}}
@@ -265,23 +287,23 @@
         <td><span class="badge scope-{{.Key.Scope}}">{{.Key.Scope}}</span></td>
         <td>{{.Key.Label}}</td>
         <td class="muted">{{.Created}}</td>
-        <td>{{if .Key.Active}}<span class="badge ok">aktif</span>{{else}}<span class="badge off">iptal · {{.Revoked}}</span>{{end}}</td>
+        <td>{{if .Key.Active}}<span class="badge ok">active</span>{{else}}<span class="badge off">revoked · {{.Revoked}}</span>{{end}}</td>
         <td class="right">
           {{if .Key.Active}}
           <button class="btn btn-danger btn-sm"
                   hx-post="/ui/p/{{.Project}}/{{.Env}}/keys/{{.Key.ID}}/revoke"
-                  hx-confirm="Bu key iptal edilsin mi? Kullanan istemciler 401 almaya başlar."
-                  hx-target="#keys-panel" hx-swap="outerHTML">İptal et</button>
+                  hx-confirm="Revoke this key? Clients using it will start getting 401."
+                  hx-target="#keys-panel" hx-swap="outerHTML">Revoke</button>
           {{else}}
           <button class="btn btn-ghost btn-sm"
                   hx-delete="/ui/p/{{.Project}}/{{.Env}}/keys/{{.Key.ID}}"
-                  hx-confirm="Kayıt tamamen silinsin mi?"
-                  hx-target="#keys-panel" hx-swap="outerHTML">Kaydı sil</button>
+                  hx-confirm="Delete this record entirely?"
+                  hx-target="#keys-panel" hx-swap="outerHTML">Delete record</button>
           {{end}}
         </td>
       </tr>
       {{else}}
-      <tr><td colspan="6" class="empty">Bu environment'ta key yok.</td></tr>
+      <tr><td colspan="6" class="empty">No keys in this environment.</td></tr>
       {{end}}
     </tbody>
   </table>

@@ -1,0 +1,19 @@
+# Keep secrets out of image layers: .env must never enter the build context.
+.env
+*.env
+!.env.example
+
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# Compiled binary and local database
+/confezy
+*.db
+*.db-wal
+*.db-shm
+
+.DS_Store
+plan.md

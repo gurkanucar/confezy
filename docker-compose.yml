@@ -1,0 +1,33 @@
+services:
+  confezy:
+    build: .
+    image: confezy:latest
+    container_name: confezy
+    restart: unless-stopped
+
+    # Always 8080 inside the container; .env decides the published host port.
+    ports:
+      - "${CONFEZY_PORT:-8080}:8080"
+
+    env_file:
+      - .env
+
+    # SQLite file lives in a named volume, so data survives the container.
+    volumes:
+      - confezy-data:/data
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  confezy-data:

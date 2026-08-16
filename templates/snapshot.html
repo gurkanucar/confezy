@@ -1,0 +1,7 @@
+{{define "content"}}
+<h1 class="page-title">Snapshot</h1>
+<p class="muted">Exactly what <code>GET /v1/snapshot</code> returns for this environment.
+  A client fetches this once, stores it with the <code>ETag</code>, then polls with
+  <code>If-None-Match</code> and does nothing on a <code>304</code>.</p>
+{{template "snapshot_panel" .}}
+{{end}}

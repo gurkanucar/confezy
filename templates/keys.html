@@ -1,6 +1,6 @@
 {{define "content"}}
-<h1 class="page-title">API Key'ler</h1>
-<p class="muted">Key'ler <code>{{.Env.Slug}}</code> environment'ına bağlıdır. İstemci
-  <code>X-App-Key</code> başlığıyla gönderir; proje/environment göndermez.</p>
+<h1 class="page-title">API keys</h1>
+<p class="muted">Keys are bound to the <code>{{.Env.Slug}}</code> environment. A client sends one in the
+  <code>X-App-Key</code> header and never names a project or environment.</p>
 {{template "keys_panel" .}}
 {{end}}

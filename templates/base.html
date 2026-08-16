@@ -1,5 +1,5 @@
 {{define "base"}}<!doctype html>
-<html lang="tr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,7 +23,7 @@
   <a class="brand" href="/ui/projects">confezy</a>
 
   {{if .Project}}
-  <nav class="crumbs" aria-label="Konum">
+  <nav class="crumbs" aria-label="Breadcrumb">
     <a href="/ui/p/{{.Project.Slug}}">{{.Project.Name}}</a>
     {{if .Env}}
       <span class="sep">/</span>
@@ -34,23 +34,24 @@
 
   <div class="spacer"></div>
 
-  <button class="icon-btn" type="button" onclick="toggleTheme()" title="Temayı değiştir" aria-label="Temayı değiştir">
+  <button class="icon-btn" type="button" onclick="toggleTheme()" title="Toggle theme" aria-label="Toggle theme">
     <span class="only-light">☾</span><span class="only-dark">☀</span>
   </button>
 
   {{if .User}}
   <form method="post" action="/ui/logout" class="inline">
     <span class="who">{{.User}}</span>
-    <button class="btn btn-ghost" type="submit">Çıkış</button>
+    <button class="btn btn-ghost" type="submit">Sign out</button>
   </form>
   {{end}}
 </header>
 
 {{if .Env}}
 <nav class="tabs">
-  <a class="tab {{if eq .Tab "flags"}}active{{end}}"   href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/flags">Flag'ler</a>
-  <a class="tab {{if eq .Tab "configs"}}active{{end}}" href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/configs">Config'ler</a>
-  <a class="tab {{if eq .Tab "keys"}}active{{end}}"    href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/keys">API Key'ler</a>
+  <a class="tab {{if eq .Tab "flags"}}active{{end}}"   href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/flags">Flags</a>
+  <a class="tab {{if eq .Tab "configs"}}active{{end}}" href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/configs">Configs</a>
+  <a class="tab {{if eq .Tab "keys"}}active{{end}}"    href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/keys">API keys</a>
+  <a class="tab {{if eq .Tab "snapshot"}}active{{end}}" href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/snapshot">Snapshot</a>
 
   {{if .Envs}}
   <div class="env-switch">
@@ -115,14 +116,14 @@ function validateJSON(el) {
   } catch (e) {
     el.classList.add('invalid');
     btn.disabled = true;
-    msg.textContent = 'Geçersiz JSON: ' + e.message;
+    msg.textContent = 'Invalid JSON: ' + e.message;
   }
 }
 
 function copyText(btn, text) {
   navigator.clipboard.writeText(text).then(function () {
     var old = btn.textContent;
-    btn.textContent = 'Kopyalandı';
+    btn.textContent = 'Copied';
     setTimeout(function () { btn.textContent = old; }, 1500);
   });
 }

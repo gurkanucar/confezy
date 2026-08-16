@@ -26,32 +26,41 @@ import (
 	"confezy/internal/ui"
 )
 
-// Environment variables read by serve to bootstrap the admin account, for
-// deployments where running an interactive command is awkward.
+// Environment variables read by serve. They exist for deployments where running
+// an interactive command is awkward.
 const (
 	envAdminUsername     = "CONFEZY_ADMIN_USERNAME"
 	envAdminPassword     = "CONFEZY_ADMIN_PASSWORD"
 	envAdminPasswordFile = "CONFEZY_ADMIN_PASSWORD_FILE"
+	envSeedData          = "CONFEZY_SEED_DATA"
 )
 
-const usage = `confezy — feature flag + JSON config servisi
+// defaultEnvFile is loaded at startup when present; CONFEZY_ENV_FILE overrides
+// the path.
+const defaultEnvFile = ".env"
 
-Kullanım:
+const usage = `confezy — feature flag and JSON config service
+
+Usage:
   confezy serve [-port 8080] [-db ./data.db]
   confezy admin-create -username admin [-db ./data.db] [-reset]
 
-Komutlar:
-  serve          HTTP sunucusunu başlatır (API + admin paneli)
-  admin-create   Admin paneli için hesap oluşturur; şifre terminalden sorulur
+Commands:
+  serve          Start the HTTP server (JSON API + admin panel)
+  admin-create   Create an admin account; the password is read from the terminal
 
-Ortam değişkenleri (serve):
-  CONFEZY_ADMIN_USERNAME       Hesap yoksa açılışta bu adla oluşturulur
-  CONFEZY_ADMIN_PASSWORD       Şifresi (en az 8 karakter)
-  CONFEZY_ADMIN_PASSWORD_FILE  Şifreyi dosyadan okur; CONFEZY_ADMIN_PASSWORD
-                               yerine kullanılır (docker/k8s secret'ları için)
+Environment variables (serve):
+  CONFEZY_ADMIN_USERNAME       Account created at startup if it does not exist
+  CONFEZY_ADMIN_PASSWORD       Its password (at least 8 characters)
+  CONFEZY_ADMIN_PASSWORD_FILE  Read the password from a file instead; takes
+                               precedence over CONFEZY_ADMIN_PASSWORD and keeps
+                               the secret out of the process environment
+  CONFEZY_SEED_DATA            Insert the demo dataset into an empty database.
+                               Default: 1 (enabled). Set to 0 to turn it off.
 
-  Var olan hesabın şifresi hiçbir zaman ezilmez; değiştirmek için
-  admin-create -reset kullan.
+  An existing account is never modified; use admin-create -reset to change a
+  password. A .env file in the working directory is loaded at startup
+  (CONFEZY_ENV_FILE overrides the path); real environment variables win over it.
 `
 
 func main() {
@@ -61,6 +70,14 @@ func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
+	}
+
+	envFile := os.Getenv("CONFEZY_ENV_FILE")
+	if envFile == "" {
+		envFile = defaultEnvFile
+	}
+	if err := loadDotEnv(envFile); err != nil {
+		log.Fatal(err)
 	}
 
 	var err error
@@ -73,7 +90,7 @@ func main() {
 		fmt.Print(usage)
 		return
 	default:
-		fmt.Fprintf(os.Stderr, "bilinmeyen komut: %s\n\n%s", os.Args[1], usage)
+		fmt.Fprintf(os.Stderr, "unknown command: %s\n\n%s", os.Args[1], usage)
 		os.Exit(2)
 	}
 
@@ -84,9 +101,9 @@ func main() {
 
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	port := fs.Int("port", 8080, "dinlenecek port")
-	host := fs.String("host", "", "bağlanılacak adres (boş = tüm arayüzler)")
-	dbPath := fs.String("db", "./data.db", "SQLite veritabanı dosyası")
+	port := fs.Int("port", 8080, "port to listen on")
+	host := fs.String("host", "", "address to bind (empty = all interfaces)")
+	dbPath := fs.String("db", "./data.db", "SQLite database file")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -100,6 +117,9 @@ func cmdServe(args []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := database.Migrate(ctx); err != nil {
+		return err
+	}
+	if err := seedDemoData(ctx, database); err != nil {
 		return err
 	}
 	if err := bootstrapAdmin(ctx, database); err != nil {
@@ -126,7 +146,7 @@ func cmdServe(args []string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("dinleniyor http://localhost:%d  (db: %s)", *port, database.Path)
+		log.Printf("listening on http://localhost:%d  (db: %s)", *port, database.Path)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
@@ -139,12 +159,107 @@ func cmdServe(args []string) error {
 	case err := <-errCh:
 		return err
 	case <-quit:
-		log.Print("kapatılıyor…")
+		log.Print("shutting down…")
 	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// seedDemoData inserts the demo dataset unless it is switched off. It only
+// touches a database with no projects in it, so restarts never duplicate rows
+// and real data is never overwritten.
+func seedDemoData(ctx context.Context, database *db.DB) error {
+	enabled, err := envBool(envSeedData, true)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return nil
+	}
+
+	seeded, err := database.Seed(ctx)
+	if err != nil {
+		return err
+	}
+	if seeded {
+		log.Printf("demo data inserted (set %s=0 to disable). "+
+			"The seeded API keys are display-only and authenticate nothing; "+
+			"create a real key from the admin panel.", envSeedData)
+	}
+	return nil
+}
+
+// loadDotEnv reads KEY=VALUE lines from path into the process environment. A
+// missing file is not an error — the file is a convenience, not a config source
+// the service depends on.
+//
+// Variables already set in the real environment are left alone, so an explicit
+// `CONFEZY_ADMIN_PASSWORD=… ./confezy serve` and a container's env_file both win
+// over the file on disk.
+func loadDotEnv(path string) error {
+	f, err := os.Open(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("could not read %s: %w", path, err)
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for lineNo := 1; scanner.Scan(); lineNo++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		line = strings.TrimPrefix(line, "export ")
+
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			return fmt.Errorf("%s:%d: expected 'KEY=value'", path, lineNo)
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return fmt.Errorf("%s:%d: empty key", path, lineNo)
+		}
+		if _, alreadySet := os.LookupEnv(key); alreadySet {
+			continue
+		}
+		if err := os.Setenv(key, unquote(strings.TrimSpace(value))); err != nil {
+			return fmt.Errorf("%s:%d: %w", path, lineNo, err)
+		}
+	}
+	return scanner.Err()
+}
+
+// unquote strips one layer of matching quotes. Values are otherwise taken
+// literally, so a '#' inside a value stays part of the value.
+func unquote(s string) string {
+	if len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
+}
+
+// envBool reads a boolean environment variable, falling back to def when it is
+// unset or empty. An unrecognised value is an error rather than a silent false.
+func envBool(name string, def bool) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return def, nil
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "y", "on":
+		return true, nil
+	case "0", "false", "no", "n", "off":
+		return false, nil
+	}
+	return false, fmt.Errorf("%s: expected a boolean (1/0, true/false, yes/no), got %q", name, raw)
 }
 
 // bootstrapAdmin creates the admin account from the environment when that
@@ -164,13 +279,13 @@ func bootstrapAdmin(ctx context.Context, database *db.DB) error {
 		// Nothing configured: fall back to the CLI, but say so if the panel
 		// would be unreachable.
 		if count, err := database.CountUsers(ctx); err == nil && count == 0 {
-			log.Printf("hiç admin hesabı yok — 'confezy admin-create -username admin' çalıştır "+
-				"veya %s / %s ver", envAdminUsername, envAdminPassword)
+			log.Printf("no admin account exists — run 'confezy admin-create -username admin' "+
+				"or set %s / %s", envAdminUsername, envAdminPassword)
 		}
 		return nil
 	}
 	if username == "" || password == "" {
-		return fmt.Errorf("%s ve %s (ya da %s) birlikte verilmeli",
+		return fmt.Errorf("%s and %s (or %s) must be set together",
 			envAdminUsername, envAdminPassword, envAdminPasswordFile)
 	}
 	if !model.ValidUsername(username) {
@@ -182,8 +297,8 @@ func bootstrapAdmin(ctx context.Context, database *db.DB) error {
 
 	switch _, err := database.GetUserByUsername(ctx, username); {
 	case err == nil:
-		log.Printf("admin %q zaten var, şifresi değiştirilmedi "+
-			"(değiştirmek için: confezy admin-create -username %s -reset)", username, username)
+		log.Printf("admin %q already exists, password left unchanged "+
+			"(to change it: confezy admin-create -username %s -reset)", username, username)
 		return nil
 	case !errors.Is(err, db.ErrNotFound):
 		return err
@@ -200,7 +315,7 @@ func bootstrapAdmin(ctx context.Context, database *db.DB) error {
 		return err
 	}
 
-	log.Printf("admin %q ortam değişkenlerinden oluşturuldu", username)
+	log.Printf("admin %q created from the environment", username)
 	return nil
 }
 
@@ -210,7 +325,7 @@ func adminPasswordFromEnv() (string, error) {
 	if path := strings.TrimSpace(os.Getenv(envAdminPasswordFile)); path != "" {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return "", fmt.Errorf("%s okunamadı: %w", envAdminPasswordFile, err)
+			return "", fmt.Errorf("could not read %s: %w", envAdminPasswordFile, err)
 		}
 		return strings.TrimRight(string(data), "\r\n"), nil
 	}
@@ -261,7 +376,7 @@ func startSessionJanitor(database *db.DB) func() {
 		defer ticker.Stop()
 		for {
 			if err := database.DeleteExpiredSessions(ctx); err != nil && ctx.Err() == nil {
-				log.Printf("oturum temizliği: %v", err)
+				log.Printf("session cleanup: %v", err)
 			}
 			select {
 			case <-ctx.Done():
@@ -301,16 +416,16 @@ func requestLog(next http.Handler) http.Handler {
 
 func cmdAdminCreate(args []string) error {
 	fs := flag.NewFlagSet("admin-create", flag.ExitOnError)
-	username := fs.String("username", "", "admin kullanıcı adı (zorunlu)")
-	dbPath := fs.String("db", "./data.db", "SQLite veritabanı dosyası")
-	reset := fs.Bool("reset", false, "hesap varsa şifresini değiştir")
+	username := fs.String("username", "", "admin username (required)")
+	dbPath := fs.String("db", "./data.db", "SQLite database file")
+	reset := fs.Bool("reset", false, "change the password if the account already exists")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 
 	name := strings.TrimSpace(*username)
 	if !model.ValidUsername(name) {
-		return errors.New(model.ErrInvalidUsername.Error())
+		return model.ErrInvalidUsername
 	}
 
 	database, err := db.Open(*dbPath)
@@ -330,7 +445,7 @@ func cmdAdminCreate(args []string) error {
 		return err
 	}
 	if !model.ValidPassword(password) {
-		return errors.New(model.ErrInvalidPassword.Error())
+		return model.ErrInvalidPassword
 	}
 
 	hash, err := auth.HashPassword(password)
@@ -341,19 +456,19 @@ func cmdAdminCreate(args []string) error {
 	_, err = database.CreateUser(ctx, name, hash)
 	if errors.Is(err, db.ErrDuplicate) {
 		if !*reset {
-			return fmt.Errorf("%q zaten var; şifresini değiştirmek için -reset kullan", name)
+			return fmt.Errorf("%q already exists; pass -reset to change its password", name)
 		}
 		if err := database.SetUserPassword(ctx, name, hash); err != nil {
 			return err
 		}
-		fmt.Printf("%q kullanıcısının şifresi güncellendi.\n", name)
+		fmt.Printf("Password updated for %q.\n", name)
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("%q oluşturuldu. Panele /ui/login adresinden gir.\n", name)
+	fmt.Printf("%q created. Sign in at /ui/login.\n", name)
 	return nil
 }
 
@@ -363,27 +478,27 @@ func readPassword() (string, error) {
 		// Piped input: read a single line.
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 		if err != nil && line == "" {
-			return "", fmt.Errorf("şifre okunamadı: %w", err)
+			return "", fmt.Errorf("could not read password: %w", err)
 		}
 		return strings.TrimRight(line, "\r\n"), nil
 	}
 
-	fmt.Print("Şifre: ")
+	fmt.Print("Password: ")
 	first, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {
-		return "", fmt.Errorf("şifre okunamadı: %w", err)
+		return "", fmt.Errorf("could not read password: %w", err)
 	}
 
-	fmt.Print("Şifre (tekrar): ")
+	fmt.Print("Password (again): ")
 	second, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {
-		return "", fmt.Errorf("şifre okunamadı: %w", err)
+		return "", fmt.Errorf("could not read password: %w", err)
 	}
 
 	if string(first) != string(second) {
-		return "", errors.New("şifreler eşleşmedi")
+		return "", errors.New("passwords did not match")
 	}
 	return string(first), nil
 }

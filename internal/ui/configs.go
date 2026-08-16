@@ -47,7 +47,7 @@ func (s *Server) configsView(r *http.Request, scope envScope, errMsg string) (Co
 
 	project, env := scope.Project, scope.Env
 	return ConfigsView{
-		Layout: s.layoutFor(r, "Config'ler · "+project.Name, &project, &env, scope.Envs, "configs"),
+		Layout: s.layoutFor(r, "Configs · "+project.Name, &project, &env, scope.Envs, "configs"),
 		Cards:  cards,
 		Error:  errMsg,
 	}, nil
@@ -85,15 +85,15 @@ func (s *Server) createConfig(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case !model.ValidKey(key):
-		errMsg = "Geçersiz key: " + model.ErrInvalidKey.Error()
+		errMsg = "Invalid key: " + model.ErrInvalidKey.Error()
 		status = http.StatusUnprocessableEntity
 	case !json.Valid([]byte(raw)):
-		errMsg = "Geçersiz JSON."
+		errMsg = "Invalid JSON."
 		status = http.StatusUnprocessableEntity
 	default:
 		_, err := s.db.CreateConfig(r.Context(), scope.Env.ID, key, compactJSON(raw), description)
 		if errors.Is(err, db.ErrDuplicate) {
-			errMsg = "Bu key zaten var: " + key
+			errMsg = "This key already exists: " + key
 			status = http.StatusUnprocessableEntity
 		} else if err != nil {
 			internalError(w, "create config", err)
@@ -120,7 +120,7 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 
 	expected, err := formVersion(r)
 	if err != nil {
-		http.Error(w, "expectedVersion gerekli", http.StatusBadRequest)
+		http.Error(w, "expectedVersion is required", http.StatusBadRequest)
 		return
 	}
 
@@ -143,14 +143,14 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.renderFragment(w, http.StatusUnprocessableEntity, "config_card",
-			card(current, raw, "Geçersiz JSON — kaydedilmedi."))
+			card(current, raw, "Invalid JSON — nothing was saved."))
 		return
 	}
 
 	cfg, err := s.db.UpdateConfig(r.Context(), scope.Env.ID, key, compactJSON(raw), &description, expected)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
-		http.Error(w, "config bulunamadı", http.StatusNotFound)
+		http.Error(w, "config not found", http.StatusNotFound)
 	case errors.Is(err, db.ErrVersionConflict):
 		s.renderFragment(w, http.StatusConflict, "config_card",
 			card(cfg, prettyJSON(cfg.Value), staleMessage))
@@ -169,7 +169,7 @@ func (s *Server) deleteConfig(w http.ResponseWriter, r *http.Request) {
 
 	expected, err := formVersion(r)
 	if err != nil {
-		http.Error(w, "expectedVersion gerekli", http.StatusBadRequest)
+		http.Error(w, "expectedVersion is required", http.StatusBadRequest)
 		return
 	}
 

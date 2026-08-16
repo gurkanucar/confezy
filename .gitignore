@@ -1,10 +1,15 @@
-# Derlenmiş binary
+# Compiled binary
 /confezy
 
-# SQLite veritabanı ve WAL dosyaları
+# SQLite database and WAL files
 *.db
 *.db-wal
 *.db-shm
+
+# Secrets live here: the template (.env.example) is committed, the file is not
+.env
+.env.*
+!.env.example
 
 # macOS
 .DS_Store

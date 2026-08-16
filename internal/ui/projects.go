@@ -54,7 +54,7 @@ func (s *Server) projectsView(r *http.Request, errMsg string) (ProjectsView, err
 	}
 
 	return ProjectsView{
-		Layout: s.layoutFor(r, "Projeler", nil, nil, nil, ""),
+		Layout: s.layoutFor(r, "Projects", nil, nil, nil, ""),
 		Rows:   rows,
 		Error:  errMsg,
 	}, nil
@@ -80,13 +80,13 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 	var errMsg string
 	switch {
 	case !model.ValidSlug(slug):
-		errMsg = "Geçersiz slug: " + model.ErrInvalidSlug.Error()
+		errMsg = "Invalid slug: " + model.ErrInvalidSlug.Error()
 	case name == "":
-		errMsg = "İsim boş olamaz."
+		errMsg = "Name cannot be empty."
 	default:
 		_, err := s.db.CreateProject(r.Context(), slug, name)
 		if errors.Is(err, db.ErrDuplicate) {
-			errMsg = "Bu slug zaten kullanılıyor: " + slug
+			errMsg = "This slug is already taken: " + slug
 		} else if err != nil {
 			internalError(w, "create project", err)
 			return
@@ -169,11 +169,11 @@ func (s *Server) createEnvironment(w http.ResponseWriter, r *http.Request) {
 
 	var errMsg string
 	if !model.ValidSlug(slug) {
-		errMsg = "Geçersiz slug: " + model.ErrInvalidSlug.Error()
+		errMsg = "Invalid slug: " + model.ErrInvalidSlug.Error()
 	} else {
 		_, err := s.db.CreateEnvironment(r.Context(), project.ID, slug)
 		if errors.Is(err, db.ErrDuplicate) {
-			errMsg = "Bu environment zaten var: " + slug
+			errMsg = "This environment already exists: " + slug
 		} else if err != nil {
 			internalError(w, "create environment", err)
 			return

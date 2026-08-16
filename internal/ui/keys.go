@@ -51,7 +51,7 @@ func (s *Server) keysView(r *http.Request, scope envScope, newKey, errMsg string
 
 	project, env := scope.Project, scope.Env
 	return KeysView{
-		Layout: s.layoutFor(r, "API Key'ler · "+project.Name, &project, &env, scope.Envs, "keys"),
+		Layout: s.layoutFor(r, "API keys · "+project.Name, &project, &env, scope.Envs, "keys"),
 		Rows:   rows,
 		NewKey: newKey,
 		Error:  errMsg,
@@ -85,7 +85,7 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 	label := strings.TrimSpace(r.FormValue("label"))
 
 	if !model.ValidScope(scopeName) {
-		s.renderKeysPanel(w, r, scope, "", "Geçersiz scope.", http.StatusUnprocessableEntity)
+		s.renderKeysPanel(w, r, scope, "", "Invalid scope.", http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -112,7 +112,7 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "geçersiz key id", http.StatusBadRequest)
+		http.Error(w, "invalid key id", http.StatusBadRequest)
 		return
 	}
 
@@ -130,7 +130,7 @@ func (s *Server) deleteKey(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		http.Error(w, "geçersiz key id", http.StatusBadRequest)
+		http.Error(w, "invalid key id", http.StatusBadRequest)
 		return
 	}
 

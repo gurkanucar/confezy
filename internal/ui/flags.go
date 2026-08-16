@@ -11,7 +11,7 @@ import (
 )
 
 // staleMessage is shown when someone else changed the record first.
-const staleMessage = "Sayfa güncel değil, yenileyin."
+const staleMessage = "This page is out of date — reload it."
 
 // FlagRow backs the "flag_row" fragment.
 type FlagRow struct {
@@ -47,7 +47,7 @@ func (s *Server) flagsView(r *http.Request, scope envScope, errMsg string) (Flag
 
 	project, env := scope.Project, scope.Env
 	return FlagsView{
-		Layout: s.layoutFor(r, "Flag'ler · "+project.Name, &project, &env, scope.Envs, "flags"),
+		Layout: s.layoutFor(r, "Flags · "+project.Name, &project, &env, scope.Envs, "flags"),
 		Rows:   rows,
 		Error:  errMsg,
 	}, nil
@@ -82,11 +82,11 @@ func (s *Server) createFlag(w http.ResponseWriter, r *http.Request) {
 
 	var errMsg string
 	if !model.ValidKey(key) {
-		errMsg = "Geçersiz key: " + model.ErrInvalidKey.Error()
+		errMsg = "Invalid key: " + model.ErrInvalidKey.Error()
 	} else {
 		_, err := s.db.CreateFlag(r.Context(), scope.Env.ID, key, enabled, description)
 		if errors.Is(err, db.ErrDuplicate) {
-			errMsg = "Bu key zaten var: " + key
+			errMsg = "This key already exists: " + key
 		} else if err != nil {
 			internalError(w, "create flag", err)
 			return
@@ -105,13 +105,13 @@ func (s *Server) toggleFlag(w http.ResponseWriter, r *http.Request) {
 
 	expected, err := formVersion(r)
 	if err != nil {
-		http.Error(w, "expectedVersion gerekli", http.StatusBadRequest)
+		http.Error(w, "expectedVersion is required", http.StatusBadRequest)
 		return
 	}
 
 	current, err := s.db.GetFlag(r.Context(), scope.Env.ID, key)
 	if errors.Is(err, db.ErrNotFound) {
-		http.Error(w, "flag bulunamadı", http.StatusNotFound)
+		http.Error(w, "flag not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
@@ -122,7 +122,7 @@ func (s *Server) toggleFlag(w http.ResponseWriter, r *http.Request) {
 	flag, err := s.db.UpdateFlag(r.Context(), scope.Env.ID, key, !current.Enabled, nil, expected)
 	switch {
 	case errors.Is(err, db.ErrNotFound):
-		http.Error(w, "flag bulunamadı", http.StatusNotFound)
+		http.Error(w, "flag not found", http.StatusNotFound)
 	case errors.Is(err, db.ErrVersionConflict):
 		// Hand back the row as it actually stands, flagged as stale.
 		s.renderFragment(w, http.StatusConflict, "flag_row", FlagRow{
@@ -152,7 +152,7 @@ func (s *Server) deleteFlag(w http.ResponseWriter, r *http.Request) {
 
 	expected, err := formVersion(r)
 	if err != nil {
-		http.Error(w, "expectedVersion gerekli", http.StatusBadRequest)
+		http.Error(w, "expectedVersion is required", http.StatusBadRequest)
 		return
 	}
 
