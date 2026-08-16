@@ -26,6 +26,14 @@ import (
 	"confezy/internal/ui"
 )
 
+// Environment variables read by serve to bootstrap the admin account, for
+// deployments where running an interactive command is awkward.
+const (
+	envAdminUsername     = "CONFEZY_ADMIN_USERNAME"
+	envAdminPassword     = "CONFEZY_ADMIN_PASSWORD"
+	envAdminPasswordFile = "CONFEZY_ADMIN_PASSWORD_FILE"
+)
+
 const usage = `confezy — feature flag + JSON config servisi
 
 Kullanım:
@@ -35,6 +43,15 @@ Kullanım:
 Komutlar:
   serve          HTTP sunucusunu başlatır (API + admin paneli)
   admin-create   Admin paneli için hesap oluşturur; şifre terminalden sorulur
+
+Ortam değişkenleri (serve):
+  CONFEZY_ADMIN_USERNAME       Hesap yoksa açılışta bu adla oluşturulur
+  CONFEZY_ADMIN_PASSWORD       Şifresi (en az 8 karakter)
+  CONFEZY_ADMIN_PASSWORD_FILE  Şifreyi dosyadan okur; CONFEZY_ADMIN_PASSWORD
+                               yerine kullanılır (docker/k8s secret'ları için)
+
+  Var olan hesabın şifresi hiçbir zaman ezilmez; değiştirmek için
+  admin-create -reset kullan.
 `
 
 func main() {
@@ -85,6 +102,9 @@ func cmdServe(args []string) error {
 	if err := database.Migrate(ctx); err != nil {
 		return err
 	}
+	if err := bootstrapAdmin(ctx, database); err != nil {
+		return err
+	}
 
 	handler, err := buildHandler(database)
 	if err != nil {
@@ -125,6 +145,76 @@ func cmdServe(args []string) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// bootstrapAdmin creates the admin account from the environment when that
+// account is not there yet.
+//
+// An existing account is never touched: a restart must not silently undo a
+// password changed with admin-create -reset, and it must not resurrect a
+// password that has since been rotated.
+func bootstrapAdmin(ctx context.Context, database *db.DB) error {
+	username := strings.TrimSpace(os.Getenv(envAdminUsername))
+	password, err := adminPasswordFromEnv()
+	if err != nil {
+		return err
+	}
+
+	if username == "" && password == "" {
+		// Nothing configured: fall back to the CLI, but say so if the panel
+		// would be unreachable.
+		if count, err := database.CountUsers(ctx); err == nil && count == 0 {
+			log.Printf("hiç admin hesabı yok — 'confezy admin-create -username admin' çalıştır "+
+				"veya %s / %s ver", envAdminUsername, envAdminPassword)
+		}
+		return nil
+	}
+	if username == "" || password == "" {
+		return fmt.Errorf("%s ve %s (ya da %s) birlikte verilmeli",
+			envAdminUsername, envAdminPassword, envAdminPasswordFile)
+	}
+	if !model.ValidUsername(username) {
+		return fmt.Errorf("%s: %w", envAdminUsername, model.ErrInvalidUsername)
+	}
+	if !model.ValidPassword(password) {
+		return fmt.Errorf("%s: %w", envAdminPassword, model.ErrInvalidPassword)
+	}
+
+	switch _, err := database.GetUserByUsername(ctx, username); {
+	case err == nil:
+		log.Printf("admin %q zaten var, şifresi değiştirilmedi "+
+			"(değiştirmek için: confezy admin-create -username %s -reset)", username, username)
+		return nil
+	case !errors.Is(err, db.ErrNotFound):
+		return err
+	}
+
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	if _, err := database.CreateUser(ctx, username, hash); err != nil {
+		if errors.Is(err, db.ErrDuplicate) {
+			return nil
+		}
+		return err
+	}
+
+	log.Printf("admin %q ortam değişkenlerinden oluşturuldu", username)
+	return nil
+}
+
+// adminPasswordFromEnv prefers the file form, so the secret can stay out of the
+// process environment (and out of `docker inspect`).
+func adminPasswordFromEnv() (string, error) {
+	if path := strings.TrimSpace(os.Getenv(envAdminPasswordFile)); path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", fmt.Errorf("%s okunamadı: %w", envAdminPasswordFile, err)
+		}
+		return strings.TrimRight(string(data), "\r\n"), nil
+	}
+	return os.Getenv(envAdminPassword), nil
 }
 
 // buildHandler wires the three surfaces onto one mux: static assets, the JSON

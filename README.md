@@ -31,6 +31,36 @@ Panel: <http://localhost:8080/ui/login>
 `serve` bayrakları: `-port` (varsayılan 8080), `-host` (varsayılan tüm arayüzler), `-db`
 (varsayılan `./data.db`). Migration'lar her açılışta otomatik uygulanır.
 
+### Admin hesabını ortam değişkeninden vermek
+
+Docker/k8s gibi interaktif komut çalıştırmanın zahmetli olduğu yerlerde `serve`, hesabı
+açılışta kendisi oluşturabilir:
+
+```bash
+CONFEZY_ADMIN_USERNAME=admin \
+CONFEZY_ADMIN_PASSWORD=cok-gizli-bir-sifre \
+./confezy serve -port 8080 -db ./data.db
+```
+
+| Değişken | Anlamı |
+|---|---|
+| `CONFEZY_ADMIN_USERNAME` | 3–64 karakter |
+| `CONFEZY_ADMIN_PASSWORD` | en az 8 karakter |
+| `CONFEZY_ADMIN_PASSWORD_FILE` | Şifreyi dosyadan okur; verilirse `CONFEZY_ADMIN_PASSWORD` yerine geçer |
+
+Davranış:
+
+- Hesap **yoksa** oluşturulur (argon2id ile hash'lenir, düz şifre saklanmaz).
+- Hesap **varsa şifresi ezilmez** — restart, `-reset` ile yaptığın bir şifre değişikliğini
+  geri almaz. Değiştirmek için `admin-create -username <ad> -reset` kullan.
+- İkisinden yalnızca biri verilirse ya da şifre/kullanıcı adı kurallara uymuyorsa sunucu
+  net bir hatayla açılmaz.
+- Hiçbiri verilmemişse ve hiç hesap yoksa açılışta uyarı loglanır.
+
+Şifre ortam değişkenindeyse `docker inspect`, `/proc/<pid>/environ` ve alt süreçler
+üzerinden görülebilir; secret yönetimi olan bir ortamda `CONFEZY_ADMIN_PASSWORD_FILE`
+tercih et (Docker/k8s secret'ları dosya olarak mount edilir).
+
 ## Kavramlar
 
 ```
