@@ -311,6 +311,96 @@
 {{end}}
 
 
+{{define "webhooks_panel"}}
+<div id="webhooks-panel">
+  {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
+  {{if .Notice}}<div class="banner success">{{.Notice}}</div>{{end}}
+
+  <form class="card create-form column" hx-post="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/webhooks"
+        hx-target="#webhooks-panel" hx-swap="outerHTML">
+    <div class="row">
+      <div class="field">
+        <label for="nw-method">Method</label>
+        <select id="nw-method" name="method">
+          {{range .Methods}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field grow">
+        <label for="nw-url">URL</label>
+        <input id="nw-url" name="url" placeholder="https://example.com/hooks/confezy" required
+               autocomplete="off">
+      </div>
+      <div class="field">
+        <label for="nw-label">Label</label>
+        <input id="nw-label" name="label" placeholder="optional" autocomplete="off">
+      </div>
+    </div>
+    <div class="field">
+      <label for="nw-headers">Headers</label>
+      <textarea id="nw-headers" name="headers" rows="3" spellcheck="false"
+                placeholder="One per line, for example:&#10;Authorization: Bearer abc123&#10;X-Source: confezy"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit">Add webhook</button>
+  </form>
+
+  <table class="data">
+    <thead>
+      <tr><th>Target</th><th>Headers</th><th>State</th><th>Last delivery</th><th class="right">Actions</th></tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr class="{{if not .Hook.Enabled}}revoked{{end}}">
+        <td>
+          <span class="badge">{{.Hook.Method}}</span>
+          <code class="key">{{.Hook.URL}}</code>
+          {{if .Hook.Label}}<div class="muted">{{.Hook.Label}}</div>{{end}}
+        </td>
+        <td>
+          {{if .HeaderList}}
+            {{range .HeaderList}}<div><code>{{.}}</code></div>{{end}}
+          {{else}}
+            <span class="muted">—</span>
+          {{end}}
+        </td>
+        <td>
+          {{if .Hook.Enabled}}<span class="badge ok">enabled</span>
+          {{else}}<span class="badge off">disabled</span>{{end}}
+        </td>
+        <td>
+          {{if .Hook.Delivered}}
+            {{if .Hook.OK}}
+              <span class="badge ok">{{.Hook.LastStatus}}</span>
+            {{else}}
+              <span class="badge off">{{if .Hook.LastStatus}}{{.Hook.LastStatus}}{{else}}failed{{end}}</span>
+            {{end}}
+            <div class="muted">{{.LastFired}}</div>
+            {{if .Hook.LastError}}<div class="row-msg">{{.Hook.LastError}}</div>{{end}}
+          {{else}}
+            <span class="muted">never fired</span>
+          {{end}}
+        </td>
+        <td class="right">
+          <button class="btn btn-ghost btn-sm"
+                  hx-post="/ui/p/{{.Project}}/{{.Env}}/webhooks/{{.Hook.ID}}/test"
+                  hx-target="#webhooks-panel" hx-swap="outerHTML">Test</button>
+          <button class="btn btn-ghost btn-sm"
+                  hx-post="/ui/p/{{.Project}}/{{.Env}}/webhooks/{{.Hook.ID}}/toggle"
+                  hx-target="#webhooks-panel" hx-swap="outerHTML">{{if .Hook.Enabled}}Disable{{else}}Enable{{end}}</button>
+          <button class="btn btn-danger btn-sm"
+                  hx-delete="/ui/p/{{.Project}}/{{.Env}}/webhooks/{{.Hook.ID}}"
+                  hx-confirm="Delete this webhook?"
+                  hx-target="#webhooks-panel" hx-swap="outerHTML">Delete</button>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="5" class="empty">No webhooks in this environment.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+
 {{define "keys_panel"}}
 <div id="keys-panel">
   {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}

@@ -16,6 +16,7 @@ import (
 	"confezy/internal/auth"
 	"confezy/internal/db"
 	"confezy/internal/model"
+	"confezy/internal/webhook"
 )
 
 // LoginPath is where anonymous visitors are sent.
@@ -30,12 +31,15 @@ var pageFiles = []string{
 	"configs.html",
 	"keys.html",
 	"snapshot.html",
+	"webhooks.html",
 }
 
 // Server holds the parsed template sets and the dependencies handlers need.
 type Server struct {
 	db       *db.DB
 	sessions *auth.Sessions
+	// webhooks powers the panel's Test button. Nil when delivery is not running.
+	webhooks *webhook.Dispatcher
 
 	// pages maps a page file to a template set of base + partials + that page,
 	// so every page can define "content" without colliding with the others.
@@ -46,10 +50,11 @@ type Server struct {
 
 // New parses the embedded templates. files is the root FS containing the
 // "templates" directory.
-func New(database *db.DB, sessions *auth.Sessions, files fs.FS) (*Server, error) {
+func New(database *db.DB, sessions *auth.Sessions, dispatcher *webhook.Dispatcher, files fs.FS) (*Server, error) {
 	s := &Server{
 		db:       database,
 		sessions: sessions,
+		webhooks: dispatcher,
 		pages:    make(map[string]*template.Template, len(pageFiles)),
 	}
 
@@ -113,6 +118,13 @@ func (s *Server) Register(mux *http.ServeMux) {
 	// Snapshot (read-only view of what clients receive).
 	protected.HandleFunc("GET /ui/p/{slug}/{env}/snapshot", s.snapshotPage)
 	protected.HandleFunc("GET /ui/p/{slug}/{env}/snapshot/panel", s.refreshSnapshot)
+
+	// Webhooks.
+	protected.HandleFunc("GET /ui/p/{slug}/{env}/webhooks", s.webhooksPage)
+	protected.HandleFunc("POST /ui/p/{slug}/{env}/webhooks", s.createWebhook)
+	protected.HandleFunc("POST /ui/p/{slug}/{env}/webhooks/{id}/toggle", s.toggleWebhook)
+	protected.HandleFunc("POST /ui/p/{slug}/{env}/webhooks/{id}/test", s.testWebhook)
+	protected.HandleFunc("DELETE /ui/p/{slug}/{env}/webhooks/{id}", s.deleteWebhook)
 
 	// API keys.
 	protected.HandleFunc("GET /ui/p/{slug}/{env}/keys", s.keysPage)

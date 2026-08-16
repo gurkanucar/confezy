@@ -52,6 +52,7 @@
   <a class="tab {{if eq .Tab "configs"}}active{{end}}" href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/configs">Configs</a>
   <a class="tab {{if eq .Tab "keys"}}active{{end}}"    href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/keys">API keys</a>
   <a class="tab {{if eq .Tab "snapshot"}}active{{end}}" href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/snapshot">Snapshot</a>
+  <a class="tab {{if eq .Tab "webhooks"}}active{{end}}" href="/ui/p/{{.Project.Slug}}/{{.Env.Slug}}/webhooks">Webhooks</a>
 
   {{if .Envs}}
   <div class="env-switch">

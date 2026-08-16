@@ -276,6 +276,7 @@ pure JSON, the panel returns HTML fragments.
 /ui/p/{slug}/{env}/configs     Configs + JSON editor
 /ui/p/{slug}/{env}/keys        API keys, create / revoke
 /ui/p/{slug}/{env}/snapshot    The exact document clients receive, plus its ETag
+/ui/p/{slug}/{env}/webhooks    Change notifications, with a Test button
 ```
 
 The flags and configs pages carry a toolbar with a search box and tag chips. Search is a
@@ -296,6 +297,32 @@ Dark and light themes toggle from the top right; the choice is kept in `localSto
 applied before the page paints. `expectedVersion` prevents overwriting someone else's change:
 on a conflict the row turns red and says the page is out of date.
 
+## Webhooks
+
+The polling loop above is the baseline. Webhooks are the push side of it: when anything in an
+environment changes, every enabled webhook on that environment gets a request so the receiver
+re-fetches immediately instead of waiting for its next poll.
+
+- The request has **no body**. It is a signal, not a payload — nothing about the change, and
+  no config value, is sent to whatever the URL points at. The receiver asks the API, using
+  its own key.
+- Default method is `PATCH`; `POST`, `PUT` and `GET` are also available.
+- Any number of headers can be attached, one `Name: value` per line — an `Authorization`
+  header is the usual way for the receiver to tell a real delivery from a stray request.
+- An environment can have as many webhooks as you like; each is delivered independently.
+- Changes arriving close together are coalesced into a single call (750 ms window). Toggling
+  five flags in a row is one thing the receiver needs to know about.
+- Delivery happens off the request path, so a slow or dead receiver never delays an API call
+  or a panel action.
+- The result of the most recent attempt — status, error, timestamp — is shown in the panel.
+  **Failed deliveries are not retried in this version**; the receiver's own polling is the
+  backstop, which is why the ETag loop stays the primary mechanism.
+- `Test` fires one delivery immediately through exactly the same code path, so a green result
+  means the real thing works.
+
+Only `http` and `https` URLs are accepted. Note that an admin can point a webhook at an
+internal address; treat panel access accordingly.
+
 ## Architecture notes
 
 - **Two `*sql.DB` handles**: a read pool of 8 connections and a single write connection.
@@ -307,6 +334,9 @@ on a conflict the row turns red and says the page is out of date.
 - The session cookie is `HttpOnly` + `SameSite=Lax`, and `Secure` over HTTPS.
 - The admin snapshot panel calls the same `BuildSnapshot` the API uses, so the two cannot
   drift apart.
+- The storage layer signals changes through an `OnEnvChanged` callback, so it stays free of
+  any knowledge of webhooks or HTTP. The callback fires after commit, never before, so a
+  rolled-back transaction cannot produce a delivery.
 
 ## Layout
 
@@ -323,6 +353,7 @@ confezy/
 │   ├── auth/                argon2id passwords, API keys + scopes, sessions
 │   ├── httpx/               shared JSON response and error envelope
 │   ├── api/                 client.go, manage.go, etag.go
+│   ├── webhook/             change-notification delivery
 │   └── ui/                  admin panel handlers
 ├── templates/               base, pages, partials (fragments)
 └── static/                  htmx.min.js, app.css
@@ -330,5 +361,5 @@ confezy/
 
 ## Deferred to v0.2
 
-Webhooks + HMAC + retry/delivery log, rate limiting, key rotation, import/export, SSE,
-JSON Merge Patch, history/rollback.
+Webhook HMAC signatures, retries and a delivery log; rate limiting; key rotation;
+import/export; SSE; JSON Merge Patch; history/rollback.

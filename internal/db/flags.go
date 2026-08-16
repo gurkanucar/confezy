@@ -87,6 +87,7 @@ func (d *DB) CreateFlag(ctx context.Context, envID int64, key string, enabled bo
 	if err := tx.Commit(); err != nil {
 		return model.Flag{}, fmt.Errorf("create flag: %w", err)
 	}
+	d.envChanged(envID)
 
 	return model.Flag{
 		ID: id, EnvironmentID: envID, Key: key, Enabled: enabled,
@@ -134,6 +135,7 @@ func (d *DB) UpdateFlag(ctx context.Context, envID int64, key string, enabled bo
 	if err := tx.Commit(); err != nil {
 		return model.Flag{}, fmt.Errorf("update flag: %w", err)
 	}
+	d.envChanged(envID)
 
 	cur.Enabled = enabled
 	cur.Description = desc
@@ -172,5 +174,6 @@ func (d *DB) DeleteFlag(ctx context.Context, envID int64, key string, expectedVe
 	if err := tx.Commit(); err != nil {
 		return model.Flag{}, fmt.Errorf("delete flag: %w", err)
 	}
+	d.envChanged(envID)
 	return cur, nil
 }

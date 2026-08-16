@@ -40,6 +40,20 @@ type DB struct {
 	Read  *sql.DB
 	Write *sql.DB
 	Path  string
+
+	// OnEnvChanged, when set, is called with an environment id after a change
+	// beneath it has been committed. It is how webhook delivery is triggered
+	// without this package knowing anything about webhooks or HTTP. It must not
+	// block: the caller is still on the request path.
+	OnEnvChanged func(envID int64)
+}
+
+// envChanged reports a committed change. Called after Commit, never before: a
+// rolled-back transaction must not produce a notification.
+func (d *DB) envChanged(envID int64) {
+	if d.OnEnvChanged != nil {
+		d.OnEnvChanged(envID)
+	}
 }
 
 // Open opens (and creates if missing) the SQLite database at path.

@@ -1,0 +1,8 @@
+{{define "content"}}
+<h1 class="page-title">Webhooks</h1>
+<p class="muted">Fired when anything in <code>{{.Env.Slug}}</code> changes. The request carries
+  <strong>no body</strong> — it is a signal to re-fetch <code>/v1/snapshot</code>, not a
+  description of the change, so nothing about your config is sent to the receiver.
+  Changes arriving close together are delivered as one call.</p>
+{{template "webhooks_panel" .}}
+{{end}}

@@ -24,6 +24,7 @@ import (
 	"confezy/internal/db"
 	"confezy/internal/model"
 	"confezy/internal/ui"
+	"confezy/internal/webhook"
 )
 
 // Environment variables read by serve. They exist for deployments where running
@@ -126,7 +127,16 @@ func cmdServe(args []string) error {
 		return err
 	}
 
-	handler, err := buildHandler(database)
+	// Webhook delivery runs for the lifetime of the server. The database calls
+	// Notify after each committed change; nothing on the request path blocks on
+	// a receiver.
+	dispatcher := webhook.New(database)
+	webhookCtx, stopWebhooks := context.WithCancel(context.Background())
+	defer stopWebhooks()
+	go dispatcher.Run(webhookCtx)
+	database.OnEnvChanged = dispatcher.Notify
+
+	handler, err := buildHandler(database, dispatcher)
 	if err != nil {
 		return err
 	}
@@ -334,7 +344,7 @@ func adminPasswordFromEnv() (string, error) {
 
 // buildHandler wires the three surfaces onto one mux: static assets, the JSON
 // API (API key auth) and the admin UI (session auth).
-func buildHandler(database *db.DB) (http.Handler, error) {
+func buildHandler(database *db.DB, dispatcher *webhook.Dispatcher) (http.Handler, error) {
 	mux := http.NewServeMux()
 
 	// Embedded static assets.
@@ -359,7 +369,7 @@ func buildHandler(database *db.DB) (http.Handler, error) {
 
 	// Admin UI.
 	sessions := &auth.Sessions{DB: database}
-	uiServer, err := ui.New(database, sessions, templatesFS)
+	uiServer, err := ui.New(database, sessions, dispatcher, templatesFS)
 	if err != nil {
 		return nil, err
 	}

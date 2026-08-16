@@ -249,3 +249,14 @@ SELECT c.id, t.id FROM configs c, tags t
     OR (c.environment_id = 1 AND c.key = 'mixed_types'     AND t.id IN (5))
     OR (c.environment_id = 2 AND c.key = 'payment_rules'   AND t.id IN (1, 4))
     OR (c.environment_id = 4 AND c.key = 'api_endpoints'   AND t.id IN (7));
+
+-- Webhooks ------------------------------------------------------------------
+-- Seeded disabled: an enabled hook pointing at example.com would fail on every
+-- change and fill the log with noise.
+
+INSERT INTO webhooks (environment_id, url, method, headers, label, enabled, created_at) VALUES
+  (1, 'https://example.com/hooks/confezy', 'PATCH',
+      '{"Authorization":"Bearer example-token","X-Source":"confezy"}',
+      'cache invalidation', 0, CAST(strftime('%s','now') AS INTEGER) - 86400 * 4),
+  (1, 'https://example.com/hooks/secondary', 'POST', '{}',
+      'second receiver', 0, CAST(strftime('%s','now') AS INTEGER) - 86400 * 3);

@@ -83,6 +83,13 @@ func (d *DB) DeleteTag(ctx context.Context, projectID int64, name string) error 
 		return fmt.Errorf("delete tag: %w", err)
 	}
 
+	// Collected before the commit so the notifications below can name every
+	// environment the deletion touched.
+	envIDs, err := projectEnvIDs(ctx, tx, projectID)
+	if err != nil {
+		return fmt.Errorf("delete tag: %w", err)
+	}
+
 	if err := touchProjectEnvs(ctx, tx, projectID); err != nil {
 		return fmt.Errorf("delete tag: %w", err)
 	}
@@ -93,7 +100,30 @@ func (d *DB) DeleteTag(ctx context.Context, projectID int64, name string) error 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("delete tag: %w", err)
 	}
+
+	for _, envID := range envIDs {
+		d.envChanged(envID)
+	}
 	return nil
+}
+
+// projectEnvIDs lists the environments of a project inside a transaction.
+func projectEnvIDs(ctx context.Context, tx *sql.Tx, projectID int64) ([]int64, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM environments WHERE project_id = ?`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // touchProjectEnvs bumps every environment of a project. Used when a change is
@@ -405,6 +435,7 @@ func (d *DB) attachTag(ctx context.Context, envID int64, key, tagName string, ki
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("attach tag: %w", err)
 	}
+	d.envChanged(envID)
 	return nil
 }
 
@@ -448,5 +479,6 @@ func (d *DB) detachTag(ctx context.Context, envID int64, key, tagName string, ki
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("detach tag: %w", err)
 	}
+	d.envChanged(envID)
 	return nil
 }

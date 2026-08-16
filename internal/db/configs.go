@@ -83,6 +83,7 @@ func (d *DB) CreateConfig(ctx context.Context, envID int64, key, value, descript
 	if err := tx.Commit(); err != nil {
 		return model.Config{}, fmt.Errorf("create config: %w", err)
 	}
+	d.envChanged(envID)
 
 	return model.Config{
 		ID: id, EnvironmentID: envID, Key: key, Value: value,
@@ -130,6 +131,7 @@ func (d *DB) UpdateConfig(ctx context.Context, envID int64, key, value string, d
 	if err := tx.Commit(); err != nil {
 		return model.Config{}, fmt.Errorf("update config: %w", err)
 	}
+	d.envChanged(envID)
 
 	cur.Value = value
 	cur.Description = desc
@@ -168,5 +170,6 @@ func (d *DB) DeleteConfig(ctx context.Context, envID int64, key string, expected
 	if err := tx.Commit(); err != nil {
 		return model.Config{}, fmt.Errorf("delete config: %w", err)
 	}
+	d.envChanged(envID)
 	return cur, nil
 }

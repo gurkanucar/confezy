@@ -141,6 +141,46 @@ type Config struct {
 	UpdatedAt     int64
 }
 
+// WebhookMethods are the HTTP methods a webhook may use. PATCH is the default:
+// the delivery is a signal to re-fetch, not a payload.
+var WebhookMethods = []string{"PATCH", "POST", "PUT", "GET"}
+
+// ValidWebhookMethod reports whether m is an allowed webhook method.
+func ValidWebhookMethod(m string) bool {
+	for _, allowed := range WebhookMethods {
+		if m == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+// Webhook is fired when anything in its environment changes. Several may be
+// attached to the same environment; each is delivered independently.
+type Webhook struct {
+	ID            int64
+	EnvironmentID int64
+	URL           string
+	Method        string
+	// Headers is the decoded form of the stored JSON object.
+	Headers     map[string]string
+	Label       string
+	Enabled     bool
+	CreatedAt   int64
+	LastStatus  *int64
+	LastError   string
+	LastFiredAt *int64
+}
+
+// Delivered reports whether the webhook has ever been attempted.
+func (w Webhook) Delivered() bool { return w.LastFiredAt != nil }
+
+// OK reports whether the last attempt reached the receiver and it answered with
+// a 2xx.
+func (w Webhook) OK() bool {
+	return w.LastError == "" && w.LastStatus != nil && *w.LastStatus >= 200 && *w.LastStatus < 300
+}
+
 // APIKey is the stored half of an issued key. The plaintext key is shown once
 // at creation time and never persisted.
 type APIKey struct {
