@@ -419,6 +419,37 @@ thousands of configs that also changes constantly is the case to avoid. The obvi
 caching the serialised snapshot per environment stamp — it only changes when that stamp does —
 which is not implemented.
 
+### Durability
+
+`_txlock=immediate` changes only *when* a write transaction takes its lock, not what gets
+committed — atomicity, isolation and durability are unaffected. If anything it loses less:
+the failures it removed were writes that had been rejected outright with a 500.
+
+Checked rather than assumed:
+
+| Check | Result |
+|---|---|
+| 5,000 concurrent writes under 40 reading VUs | 5,000 acknowledged, 5,000 stored |
+| `kill -9` mid-write, then restart | every acknowledged write survived (1,437/1,437) |
+| 600 reads during 4,000 concurrent writes | no malformed response, the record count never went backwards, the ETag never regressed |
+| `PRAGMA integrity_check` after each | `ok`, no foreign-key violations, no invalid JSON |
+
+A reader never sees a half-finished write: WAL gives each read a consistent snapshot, and a
+transaction becomes visible only on commit.
+
+The one real caveat is not from the lock mode but from `synchronous=NORMAL`, which this
+service uses (as the plan specified). In WAL mode that means each commit is handed to the
+operating system but not forced to disk:
+
+- **Process crash** — `kill -9`, a panic, OOM: nothing is lost. The data is already with the
+  OS. Verified above.
+- **Machine crash or power loss**: the database stays intact and uncorrupted, but the most
+  recent commits can be lost.
+
+For a feature flag service that trade is usually right — a lost flag toggle is re-applied,
+and reads get much cheaper. If you need commits to survive power loss, change `synchronous`
+to `FULL` in the DSN in `internal/db/db.go`, at a significant cost in write throughput.
+
 ### A bug this found
 
 Under load, `POST /v1/manage/flags/{key}/tags` returned `500` about 5 times in 12,800 with
