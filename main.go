@@ -115,6 +115,8 @@ func cmdServe(args []string) error {
 	}
 	defer database.Close()
 
+	reportDatabaseState(database)
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	if err := database.Migrate(ctx); err != nil {
@@ -175,6 +177,23 @@ func cmdServe(args []string) error {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	return srv.Shutdown(shutdownCtx)
+}
+
+// reportDatabaseState says, on every start, whether an existing database was
+// found or a new one is being created.
+//
+// This exists because losing the database is silent otherwise: a container
+// recreated without its volume comes up with an empty file, migrations run, the
+// demo seed fills the panel, and the result is indistinguishable from a healthy
+// first install. One line at startup turns that into something you can see.
+func reportDatabaseState(database *db.DB) {
+	if database.Fresh {
+		log.Printf("no database found at %s — creating a new one. "+
+			"If this is a redeploy rather than a first install, the volume holding "+
+			"the database did not survive and the previous data is gone.", database.Path)
+		return
+	}
+	log.Printf("opened existing database at %s", database.Path)
 }
 
 // seedDemoData inserts the demo dataset unless it is switched off. It only

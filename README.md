@@ -115,8 +115,17 @@ hides this, because it reuses the same container — the loss only shows on the 
 Compose reads a `.env` sitting next to the compose file for `${VAR}` substitution, which is
 how a platform's environment settings reach the container.
 
+Every start says which of the two happened, so a lost volume is visible rather than silent:
+
+```
+confezy: opened existing database at /data/confezy.db
+confezy: no database found at /data/confezy.db — creating a new one. If this is a redeploy
+         rather than a first install, the volume holding the database did not survive and
+         the previous data is gone.
+```
+
 To check that persistence works: create a project, redeploy, and confirm it is still there —
-and that `demo data inserted` does **not** appear in the logs again.
+and that the log says *opened existing database*.
 
 Without Compose:
 

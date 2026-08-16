@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -41,6 +42,12 @@ type DB struct {
 	Write *sql.DB
 	Path  string
 
+	// Fresh reports that no usable database file was there when Open ran, so
+	// this process is starting from nothing. Worth surfacing: on a redeploy it
+	// means the volume holding the database did not survive, and without a
+	// signal that failure looks exactly like a healthy first install.
+	Fresh bool
+
 	// OnEnvChanged, when set, is called with an environment id after a change
 	// beneath it has been committed. It is how webhook delivery is triggered
 	// without this package knowing anything about webhooks or HTTP. It must not
@@ -64,6 +71,14 @@ func Open(dbPath string) (*DB, error) {
 	}
 	dsn := "file:" + abs + "?" + pragmas
 
+	// Checked before the first connection, which is what creates the file. A
+	// zero-byte file counts as fresh too: some platforms pre-create the path
+	// when mounting it, and an empty file is an empty database either way.
+	fresh := true
+	if info, statErr := os.Stat(abs); statErr == nil && info.Size() > 0 {
+		fresh = false
+	}
+
 	read, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open read handle: %w", err)
@@ -83,7 +98,7 @@ func Open(dbPath string) (*DB, error) {
 	write.SetMaxIdleConns(1)
 	write.SetConnMaxLifetime(time.Hour)
 
-	d := &DB{Read: read, Write: write, Path: abs}
+	d := &DB{Read: read, Write: write, Path: abs, Fresh: fresh}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
