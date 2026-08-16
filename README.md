@@ -82,15 +82,41 @@ them authenticate anything. Create a working key from the panel.
 
 ## Docker
 
+Local, with the port published on your machine:
+
 ```bash
 cp .env.example .env      # edit the admin password first
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 ```
 
 The image is multi-stage: a Go builder and an Alpine runtime running as a non-root user
-(uid 10001). The database lives in the `confezy-data` named volume at `/data`, so it survives
-the container. `/healthz` backs both the Dockerfile `HEALTHCHECK` and the Compose health
-check. `.env` is excluded from the build context, so no secret lands in an image layer.
+(uid 10001). `/healthz` backs both the Dockerfile `HEALTHCHECK` and the Compose health check.
+`.env` is excluded from the build context, so no secret lands in an image layer.
+
+### Deploying (Dokploy, Coolify, plain Compose)
+
+`docker-compose.yml` on its own is the deployment shape: no host port, configuration through
+environment variables. Use it as-is and set the variables in the platform's UI.
+
+**The volume is not optional.** The SQLite database lives at `/data`, and most platforms
+*recreate* the container on redeploy rather than restarting it. With nothing mounted there,
+Docker hands the new container a fresh anonymous volume: the database is empty, migrations
+run, the demo seed runs, and it looks like the service reinstalled itself. `docker restart`
+hides this, because it reuses the same container — the loss only shows on the next deploy.
+
+- Deploy type must be **Compose**, so `docker-compose.yml` is actually read. A Dockerfile-only
+  deploy ignores it, and with it the volume.
+- If the platform manages mounts itself instead, add a persistent volume at `/data`.
+- Point the domain at container port **8080** (the service uses `expose`, so the platform's
+  proxy reaches it directly; nothing is published on the host).
+- Set `CONFEZY_SEED_DATA=0`. Demo data on an empty database makes a wiped volume look like a
+  healthy fresh install; without it, an empty panel tells you immediately.
+
+Compose reads a `.env` sitting next to the compose file for `${VAR}` substitution, which is
+how a platform's environment settings reach the container.
+
+To check that persistence works: create a project, redeploy, and confirm it is still there —
+and that `demo data inserted` does **not** appear in the logs again.
 
 Without Compose:
 
@@ -345,7 +371,8 @@ confezy/
 ├── main.go                  CLI: serve, admin-create; .env loading; admin bootstrap
 ├── embed.go                 embeds templates/ and static/
 ├── Dockerfile               multi-stage build, non-root Alpine runtime
-├── docker-compose.yml
+├── docker-compose.yml       deployment shape: no host port, /data volume
+├── docker-compose.local.yml local overlay that publishes the port
 ├── .env.example             copy to .env
 ├── internal/
 │   ├── db/                  connections, migration runner, seed data, all queries

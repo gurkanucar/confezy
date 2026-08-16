@@ -1,18 +1,39 @@
+# Deployment shape, following the convention Dokploy/Coolify templates use:
+# the platform's reverse proxy (Traefik) routes to the container port, so
+# nothing is published on the host, and configuration arrives as environment
+# variables the platform injects.
+#
+# For local use, layer the ports file on top:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+
 services:
   confezy:
     build: .
     image: confezy:latest
-    container_name: confezy
     restart: unless-stopped
 
-    # Always 8080 inside the container; .env decides the published host port.
-    ports:
-      - "${CONFEZY_PORT:-8080}:8080"
+    # No host port: the platform's proxy reaches the container on 8080. Set the
+    # service port to 8080 in the Dokploy UI when adding a domain.
+    expose:
+      - 8080
 
-    env_file:
-      - .env
+    environment:
+      # Set these in the platform's Environment settings. Both must be given
+      # together; with neither set the service starts without an admin account
+      # and logs a warning, rather than failing or inventing a default password.
+      CONFEZY_ADMIN_USERNAME: ${CONFEZY_ADMIN_USERNAME:-}
+      CONFEZY_ADMIN_PASSWORD: ${CONFEZY_ADMIN_PASSWORD:-}
+      # Prefer this over the password above where the platform can mount secrets
+      # as files: it keeps the secret out of the process environment.
+      CONFEZY_ADMIN_PASSWORD_FILE: ${CONFEZY_ADMIN_PASSWORD_FILE:-}
+      # Set to 0 for a real deployment. Demo data on an empty database makes a
+      # wiped volume look like a healthy fresh install.
+      CONFEZY_SEED_DATA: ${CONFEZY_SEED_DATA:-1}
 
-    # SQLite file lives in a named volume, so data survives the container.
+    # The SQLite database lives here, and this line is what keeps it. Without a
+    # volume mounted at /data, every container recreation — which is what most
+    # platforms do on redeploy — starts from an empty database, so the data
+    # disappears and the demo seed runs again.
     volumes:
       - confezy-data:/data
 
