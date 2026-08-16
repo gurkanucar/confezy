@@ -5,6 +5,25 @@ for clients, and an embedded HTMX admin panel. No CGO, so the binary is static a
 cross-compiles cleanly. Nothing is fetched at runtime — HTMX, the CSS and the templates are
 all compiled into the binary.
 
+## Interface
+
+<p align="center">
+  <img src="docs/screenshots/admin-panel.jpg" alt="Confezy admin panel showing environment-scoped feature flags" width="100%">
+</p>
+
+<p align="center"><sub>Environment-scoped feature flags</sub></p>
+
+<p align="center">
+  <img src="docs/screenshots/json-configs.jpg" alt="Confezy JSON configuration editor" width="49%">
+  <img src="docs/screenshots/snapshot.jpg" alt="Confezy client snapshot preview" width="49%">
+</p>
+
+<p align="center"><sub>JSON config editor · Client snapshot</sub></p>
+
+The panel keeps projects, environments, feature flags, JSON configs, API keys, snapshots and
+webhooks in one focused workspace. Flags can be searched, tagged and toggled in place, with their
+version and last change visible alongside the current state. Light and dark themes are built in.
+
 ## Build
 
 ```bash
