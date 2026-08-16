@@ -358,10 +358,84 @@ re-fetches immediately instead of waiting for its next poll.
 Only `http` and `https` URLs are accepted. Note that an admin can point a webhook at an
 internal address; treat panel access accordingly.
 
+## Performance
+
+`loadtest/` holds a k6 suite. Each workload runs against its own freshly seeded database and
+a restarted server, so one workload's dataset cannot distort the next:
+
+```bash
+./loadtest/run.sh            # builds, seeds, mints keys, runs every workload
+VUS=100 DURATION=60s ./loadtest/run.sh
+```
+
+Numbers below: Apple M3 (8 cores), 16 GB, macOS 26.5, Go 1.24.4, native binary over loopback,
+50 VUs, 20s per workload, request logging enabled and written to a file. Loopback means no
+network latency — treat these as an upper bound on what the service itself can do, not as
+what a client across the internet will see. Run-to-run variation is roughly ±10%.
+
+| Workload | req/s | p50 | p95 | p99 | Errors |
+|---|---:|---:|---:|---:|---:|
+| `poll` — snapshot with `If-None-Match` → 304 | 38,315 | 1.08 ms | 2.71 ms | 3.86 ms | 0 |
+| `flags` — `GET /v1/flags` | 12,840 | 3.57 ms | 6.85 ms | 8.92 ms | 0 |
+| `write` — `POST /v1/manage/configs` | 12,239 | 2.71 ms | 12.10 ms | 18.99 ms | 0 |
+| `snapshot` — full 200, 1,985 bytes | 6,771 | 6.93 ms | 12.03 ms | 15.35 ms | 0 |
+| `mixed` — 90% poll, 10% write | 6,506 | 7.29 ms | 13.12 ms | 16.93 ms | 0 |
+
+The polling path is the one that matters, and it is the fastest by a wide margin: **38k
+conditional requests per second**, because a 304 needs one indexed key lookup and one
+environment row, and sends no body. That is the whole point of the ETag design.
+
+`mixed` is the counterpart. With a write landing every tenth iteration, the environment stamp
+moves constantly, so **not one of its 115,000 polls got a 304** — every client paid for a full
+snapshot. Push notifications are not a substitute for this either: continuous writes mean
+continuous re-fetching. Change frequency, not client count, is what sets the load.
+
+Writes reached 12k/s against a single writer connection, inserting 244,833 configs in 20
+seconds and growing the database to 25 MB, with no lock errors.
+
+### Snapshot cost scales with record count, not payload size
+
+| Configs in the environment | Payload | req/s | p95 |
+|---:|---:|---:|---:|
+| 14 (seed data) | 1,985 B | 6,771 | 12.03 ms |
+| 100 | 6,686 B | 1,659 | 50.13 ms |
+| 1,000 | 50,788 B | 195 | 424.17 ms |
+
+Two controlled runs at the same response size separate the cause:
+
+| Shape | Payload | req/s |
+|---|---:|---:|
+| 1,000 small configs | 21,810 B | 250 |
+| 20 large configs | 48,415 B | 6,113 |
+
+The larger response is **24× faster**. So the cost is per-row in the SQLite read path, not
+bytes serialised or sent. `GOGC=off` changed nothing, ruling out garbage collection, and at
+1,000 configs the process used ~430% of 800% available CPU while throughput *fell* as
+concurrency rose — contention, not saturation.
+
+Practically: an environment with a few dozen records serves full snapshots comfortably, and
+polling stays fast at any size since a 304 never touches the records. An environment with
+thousands of configs that also changes constantly is the case to avoid. The obvious fix is
+caching the serialised snapshot per environment stamp — it only changes when that stamp does —
+which is not implemented.
+
+### A bug this found
+
+Under load, `POST /v1/manage/flags/{key}/tags` returned `500` about 5 times in 12,800 with
+`SQLITE_BUSY`, contradicting what this README used to claim about a single writer connection
+being enough. Writes alone never triggered it; writes alongside heavy reads did.
+
+A write transaction began deferred, so it took a read lock on its first `SELECT` and only
+tried to upgrade on the first `INSERT`. SQLite does not apply `busy_timeout` to that upgrade,
+so under concurrent readers it failed immediately instead of waiting. Write connections now
+use `_txlock=immediate`, taking the write lock up front where the timeout does apply. Reruns
+with 20 parallel writers against 50 reading VUs produce zero lock errors.
+
 ## Architecture notes
 
-- **Two `*sql.DB` handles**: a read pool of 8 connections and a single write connection.
-  Writes serialise at the application level, so `SQLITE_BUSY` never appears.
+- **Two `*sql.DB` handles**: a read pool of 8 connections and a single write connection, so
+  writes serialise at the application level. Write connections additionally use
+  `_txlock=immediate`; the single connection alone is not enough, as the load test showed.
 - PRAGMAs are applied per connection through the DSN: `journal_mode(WAL)`,
   `busy_timeout(10000)`, `synchronous(NORMAL)`, `foreign_keys(ON)`.
 - A flag or config change and the environment stamp update share **one transaction**.
@@ -390,6 +464,7 @@ confezy/
 │   ├── httpx/               shared JSON response and error envelope
 │   ├── api/                 client.go, manage.go, etag.go
 │   ├── webhook/             change-notification delivery
+├── loadtest/                k6 suite: confezy.js + run.sh
 │   └── ui/                  admin panel handlers
 ├── templates/               base, pages, partials (fragments)
 └── static/                  htmx.min.js, app.css

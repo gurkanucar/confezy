@@ -36,6 +36,20 @@ var (
 const pragmas = "_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&" +
 	"_pragma=synchronous(NORMAL)&_pragma=foreign_keys(ON)"
 
+// writeTxLock starts every write transaction with BEGIN IMMEDIATE.
+//
+// Without it a write transaction begins deferred: the first statement is
+// usually a SELECT, so it takes a read lock and only tries to upgrade to a
+// write lock when the first INSERT or UPDATE runs. SQLite deliberately does not
+// apply busy_timeout to that upgrade — waiting there could deadlock — so under
+// concurrent readers the upgrade fails outright with SQLITE_BUSY and the
+// request turns into a 500. A load test found this: writes on their own never
+// hit it, writes alongside heavy reads did.
+//
+// Taking the write lock up front instead means the busy_timeout above applies,
+// and contention becomes a short wait rather than an error.
+const writeTxLock = "&_txlock=immediate"
+
 // DB holds the read pool and the single-writer handle.
 type DB struct {
 	Read  *sql.DB
@@ -87,13 +101,14 @@ func Open(dbPath string) (*DB, error) {
 	read.SetMaxIdleConns(8)
 	read.SetConnMaxLifetime(time.Hour)
 
-	write, err := sql.Open("sqlite", dsn)
+	write, err := sql.Open("sqlite", dsn+writeTxLock)
 	if err != nil {
 		read.Close()
 		return nil, fmt.Errorf("open write handle: %w", err)
 	}
-	// A single writer connection: SQLite allows only one writer anyway, and
-	// serialising here avoids SQLITE_BUSY entirely.
+	// A single writer connection: SQLite allows only one writer anyway, so
+	// serialising here turns write contention into a queue instead of lock
+	// errors. It is not sufficient on its own — see writeTxLock above.
 	write.SetMaxOpenConns(1)
 	write.SetMaxIdleConns(1)
 	write.SetConnMaxLifetime(time.Hour)
