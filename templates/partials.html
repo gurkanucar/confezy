@@ -63,6 +63,7 @@
     <button class="btn btn-primary" type="submit">Add environment</button>
   </form>
 
+  <div class="table-scroll">
   <table class="data">
     <thead>
       <tr><th>Slug</th><th>Created</th><th>Last change</th><th class="right">Actions</th></tr>
@@ -85,6 +86,7 @@
       {{end}}
     </tbody>
   </table>
+  </div>
 </div>
 {{end}}
 
@@ -173,7 +175,8 @@
 
   {{template "filter_bar" .}}
 
-  <table class="data">
+  <div class="table-scroll">
+  <table class="data flags-table">
     <thead>
       <tr><th>Key</th><th>State</th><th>Description</th><th>Tags</th><th>Version</th><th>Last change</th><th class="right">Actions</th></tr>
     </thead>
@@ -183,6 +186,7 @@
       {{end}}
     </tbody>
   </table>
+  </div>
 </div>
 {{end}}
 
@@ -343,6 +347,7 @@
     <button class="btn btn-primary" type="submit">Add webhook</button>
   </form>
 
+  <div class="table-scroll">
   <table class="data">
     <thead>
       <tr><th>Target</th><th>Headers</th><th>State</th><th>Last delivery</th><th class="right">Actions</th></tr>
@@ -397,6 +402,7 @@
       {{end}}
     </tbody>
   </table>
+  </div>
 </div>
 {{end}}
 
@@ -434,6 +440,7 @@
     <button class="btn btn-primary" type="submit">Create key</button>
   </form>
 
+  <div class="table-scroll">
   <table class="data">
     <thead>
       <tr><th>Key</th><th>Scope</th><th>Label</th><th>Created</th><th>State</th><th class="right">Actions</th></tr>
@@ -467,5 +474,6 @@
       {{end}}
     </tbody>
   </table>
+  </div>
 </div>
 {{end}}
