@@ -20,7 +20,7 @@ type SnapshotView struct {
 }
 
 func (s *Server) snapshotView(r *http.Request, scope envScope) (SnapshotView, error) {
-	body, err := api.BuildSnapshot(r.Context(), s.db, scope.Env.ID)
+	body, err := api.BuildSnapshot(r.Context(), s.db, scope.Env.ID, "")
 	if err != nil {
 		return SnapshotView{}, err
 	}

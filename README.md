@@ -105,6 +105,7 @@ docker run -d -p 8080:8080 -v confezy-data:/data \
 
 ```
 Project
+├── Tags                (labels shared by every environment of the project)
 └── Environment ("prod" is created automatically with the project)
     ├── Feature Flags   (bool)
     ├── JSON Configs    (any valid JSON)
@@ -113,6 +114,13 @@ Project
 
 Flag and config key format: `^[a-z0-9_]{1,64}$`
 Project and environment slug format: `^[a-z0-9][a-z0-9_-]{0,62}$`
+Tag format: `^[a-z0-9][a-z0-9_-]{0,31}$`
+
+Tags belong to the **project**, so a label defined once applies in prod, staging and dev
+without being recreated. They are attached to individual flags and configs, which are
+per environment. Attaching a tag does not change a record's `version` — it is metadata, not
+a value — but it does move the environment stamp, because it changes what a `?tag=` request
+returns.
 
 Every flag and config carries its own `version`, incremented on each update. Each environment
 also carries an invisible `updated_at` stamp, bumped by any write beneath it, which is the
@@ -151,6 +159,7 @@ GET /v1/flags               → { "flags": { "new_checkout": true, ... } }
 GET /v1/flags/{key}         → { "key", "enabled", "version" }
 GET /v1/configs             → { "configs": { "payment_rules": {...}, ... } }
 GET /v1/configs/{key}       → { "key", "value", "version" }
+GET /v1/tags                → { "tags": ["billing", "checkout", ...] }
 ```
 
 ```bash
@@ -171,6 +180,18 @@ curl -H "X-App-Key: $KEY" http://localhost:8080/v1/snapshot
   }
 }
 ```
+
+### Filtering by tag
+
+`/v1/snapshot`, `/v1/flags` and `/v1/configs` accept `?tag=<name>` to return only the records
+carrying that tag:
+
+```bash
+curl -H "X-App-Key: $KEY" 'http://localhost:8080/v1/snapshot?tag=checkout'
+```
+
+The filter is part of the `ETag` (`"1786814026.checkout"`), so a client polling two different
+filters can never be served the wrong list behind a `304`.
 
 ### Recommended client pattern
 
@@ -204,7 +225,15 @@ DELETE /v1/manage/flags/{key}         { "expectedVersion" }
 POST   /v1/manage/configs             { "key", "value", "description?" }
 PUT    /v1/manage/configs/{key}       { "value", "description?", "expectedVersion" }
 DELETE /v1/manage/configs/{key}       { "expectedVersion" }
+
+POST   /v1/manage/flags/{key}/tags    { "tag" }
+DELETE /v1/manage/flags/{key}/tags/{tag}
+POST   /v1/manage/configs/{key}/tags  { "tag" }
+DELETE /v1/manage/configs/{key}/tags/{tag}
+DELETE /v1/manage/tags/{tag}          removes the tag from the whole project
 ```
+
+Attaching a tag creates it on the project if it does not exist yet, and is idempotent.
 
 Rules:
 
@@ -249,6 +278,20 @@ pure JSON, the panel returns HTML fragments.
 /ui/p/{slug}/{env}/snapshot    The exact document clients receive, plus its ETag
 ```
 
+The flags and configs pages carry a toolbar with a search box and tag chips. Search is a
+case-insensitive substring match against the key **and** against attached tag names, so
+typing `risk` finds records tagged `risky` even when their keys say nothing about it. The
+filter lives in the URL (`?tag=risky&q=check`), so a filtered view can be reloaded, shared or
+bookmarked; the same URL returns the full page to a browser and just the panel to htmx.
+
+Tags are edited inline: each row shows its tags with a remove control and a small field for
+adding one.
+
+On the API keys page, a freshly created key offers **Copy as curl** — a ready-to-run request
+with the real key in it. Existing keys offer the same button, but since only the key's hash
+and prefix are stored the secret cannot be filled back in, so that command carries a
+`<YOUR_API_KEY>` placeholder.
+
 Dark and light themes toggle from the top right; the choice is kept in `localStorage` and
 applied before the page paints. `expectedVersion` prevents overwriting someone else's change:
 on a conflict the row turns red and says the page is out of date.
@@ -288,4 +331,4 @@ confezy/
 ## Deferred to v0.2
 
 Webhooks + HMAC + retry/delivery log, rate limiting, key rotation, import/export, SSE,
-tags/filtering, JSON Merge Patch, history/rollback.
+JSON Merge Patch, history/rollback.

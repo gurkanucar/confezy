@@ -16,20 +16,26 @@ type ConfigCard struct {
 	Project string
 	Env     string
 	Config  model.Config
+	Tags    []string
 	Pretty  string
 	Updated string
 	Error   string
+	// Filter is carried on the card so its tag forms preserve the current
+	// search when they re-render the panel.
+	Filter FilterState
 }
 
 // ConfigsView backs configs.html and the "configs_panel" fragment.
 type ConfigsView struct {
 	Layout
-	Cards []ConfigCard
-	Error string
+	Cards   []ConfigCard
+	AllTags []string
+	Filter  FilterState
+	Error   string
 }
 
-func (s *Server) configsView(r *http.Request, scope envScope, errMsg string) (ConfigsView, error) {
-	configs, err := s.db.ListConfigs(r.Context(), scope.Env.ID)
+func (s *Server) configsView(r *http.Request, scope envScope, filter FilterState, errMsg string) (ConfigsView, error) {
+	configs, err := s.db.ListConfigsTagged(r.Context(), scope.Env.ID, filter.toDB())
 	if err != nil {
 		return ConfigsView{}, err
 	}
@@ -39,17 +45,26 @@ func (s *Server) configsView(r *http.Request, scope envScope, errMsg string) (Co
 		cards = append(cards, ConfigCard{
 			Project: scope.Project.Slug,
 			Env:     scope.Env.Slug,
-			Config:  c,
+			Config:  c.Config,
+			Tags:    c.Tags,
 			Pretty:  prettyJSON(c.Value),
 			Updated: formatTime(c.UpdatedAt),
+			Filter:  filter,
 		})
+	}
+
+	tags, err := s.tagNames(r, scope)
+	if err != nil {
+		return ConfigsView{}, err
 	}
 
 	project, env := scope.Project, scope.Env
 	return ConfigsView{
-		Layout: s.layoutFor(r, "Configs · "+project.Name, &project, &env, scope.Envs, "configs"),
-		Cards:  cards,
-		Error:  errMsg,
+		Layout:  s.layoutFor(r, "Configs · "+project.Name, &project, &env, scope.Envs, "configs"),
+		Cards:   cards,
+		AllTags: tags,
+		Filter:  filter,
+		Error:   errMsg,
 	}, nil
 }
 
@@ -58,12 +73,12 @@ func (s *Server) configsPage(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	view, err := s.configsView(r, scope, "")
+	view, err := s.configsView(r, scope, readFilter(r), "")
 	if err != nil {
 		internalError(w, "list configs", err)
 		return
 	}
-	s.renderPage(w, http.StatusOK, "configs.html", view)
+	s.renderListing(w, r, "configs.html", "configs_panel", view)
 }
 
 func (s *Server) createConfig(w http.ResponseWriter, r *http.Request) {
@@ -129,9 +144,11 @@ func (s *Server) updateConfig(w http.ResponseWriter, r *http.Request) {
 			Project: scope.Project.Slug,
 			Env:     scope.Env.Slug,
 			Config:  c,
+			Tags:    s.configTagNames(r, scope, c.ID),
 			Pretty:  pretty,
 			Updated: formatTime(c.UpdatedAt),
 			Error:   errMsg,
+			Filter:  readFilter(r),
 		}
 	}
 
@@ -190,7 +207,7 @@ func (s *Server) renderConfigsPanel(w http.ResponseWriter, r *http.Request, scop
 	if env, err := s.db.GetEnvironmentByID(r.Context(), scope.Env.ID); err == nil {
 		scope.Env = env
 	}
-	view, err := s.configsView(r, scope, errMsg)
+	view, err := s.configsView(r, scope, readFilter(r), errMsg)
 	if err != nil {
 		internalError(w, "list configs", err)
 		return
@@ -214,4 +231,66 @@ func compactJSON(value string) string {
 		return value
 	}
 	return buf.String()
+}
+
+// configTagNames looks up the tags attached to one config. Used when a single
+// card is re-rendered and the full listing is not being rebuilt.
+func (s *Server) configTagNames(r *http.Request, scope envScope, configID int64) []string {
+	configs, err := s.db.ListConfigsTagged(r.Context(), scope.Env.ID, db.ListFilter{})
+	if err != nil {
+		// The card is still worth rendering without its tags.
+		return nil
+	}
+	for _, c := range configs {
+		if c.ID == configID {
+			return c.Tags
+		}
+	}
+	return nil
+}
+
+// addConfigTag and removeConfigTag re-render the whole panel, because a tag
+// change can move a card in or out of the active filter.
+func (s *Server) addConfigTag(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.resolveEnv(w, r)
+	if !ok {
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	// The new tag is "name"; "tag" is the filter parameter.
+	tag := strings.ToLower(strings.TrimSpace(r.FormValue("name")))
+	var errMsg string
+	if !model.ValidTag(tag) {
+		errMsg = "Invalid tag: " + model.ErrInvalidTag.Error()
+	} else if err := s.db.AttachConfigTag(r.Context(), scope.Env.ID, r.PathValue("key"), tag); err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			errMsg = "Config not found."
+		} else {
+			internalError(w, "attach config tag", err)
+			return
+		}
+	}
+
+	status := http.StatusOK
+	if errMsg != "" {
+		status = http.StatusUnprocessableEntity
+	}
+	s.renderConfigsPanel(w, r, scope, errMsg, status)
+}
+
+func (s *Server) removeConfigTag(w http.ResponseWriter, r *http.Request) {
+	scope, ok := s.resolveEnv(w, r)
+	if !ok {
+		return
+	}
+	err := s.db.DetachConfigTag(r.Context(), scope.Env.ID, r.PathValue("key"), r.PathValue("tag"))
+	if err != nil && !errors.Is(err, db.ErrNotFound) {
+		internalError(w, "detach config tag", err)
+		return
+	}
+	s.renderConfigsPanel(w, r, scope, "", http.StatusOK)
 }

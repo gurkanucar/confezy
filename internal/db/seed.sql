@@ -213,3 +213,39 @@ INSERT INTO api_keys (environment_id, key_hash, key_prefix, scope, label, create
   (1, 'demo0000000000000000000000000000000000000000000000000000000005', 'ff_read_prod', 'read',  'retired-web',  CAST(strftime('%s','now') AS INTEGER) - 86400 * 40, CAST(strftime('%s','now') AS INTEGER) - 86400 * 6),
   (2, 'demo0000000000000000000000000000000000000000000000000000000006', 'ff_read_stag', 'read',  'qa-runner',    CAST(strftime('%s','now') AS INTEGER) - 86400 * 12, NULL),
   (4, 'demo0000000000000000000000000000000000000000000000000000000007', 'ff_read_prod', 'read',  'mobile-prod',  CAST(strftime('%s','now') AS INTEGER) - 86400 * 9,  NULL);
+
+-- Tags ----------------------------------------------------------------------
+-- Defined per project, then attached to flags and configs across environments.
+
+INSERT INTO tags (id, project_id, name, created_at) VALUES
+  (1, 1, 'checkout',    CAST(strftime('%s','now') AS INTEGER) - 86400 * 25),
+  (2, 1, 'experiment',  CAST(strftime('%s','now') AS INTEGER) - 86400 * 25),
+  (3, 1, 'risky',       CAST(strftime('%s','now') AS INTEGER) - 86400 * 20),
+  (4, 1, 'billing',     CAST(strftime('%s','now') AS INTEGER) - 86400 * 20),
+  (5, 1, 'internal',    CAST(strftime('%s','now') AS INTEGER) - 86400 * 18),
+  (6, 2, 'ui',          CAST(strftime('%s','now') AS INTEGER) - 86400 * 12),
+  (7, 2, 'performance', CAST(strftime('%s','now') AS INTEGER) - 86400 * 12);
+
+INSERT INTO flag_tags (flag_id, tag_id)
+SELECT f.id, t.id FROM feature_flags f, tags t
+ WHERE (f.environment_id = 1 AND f.key = 'new_checkout'    AND t.id IN (1, 2))
+    OR (f.environment_id = 1 AND f.key = 'gradual_rollout' AND t.id IN (2, 3))
+    OR (f.environment_id = 1 AND f.key = 'api_v2_enabled'  AND t.id IN (3))
+    OR (f.environment_id = 1 AND f.key = 'show_ads'        AND t.id IN (2))
+    OR (f.environment_id = 1 AND f.key = 'escaping_check'  AND t.id IN (5))
+    OR (f.environment_id = 1 AND f.key = 'unicode_check'   AND t.id IN (5))
+    OR (f.environment_id = 2 AND f.key = 'new_checkout'    AND t.id IN (1))
+    OR (f.environment_id = 2 AND f.key = 'debug_toolbar'   AND t.id IN (5))
+    OR (f.environment_id = 4 AND f.key = 'dark_mode'       AND t.id IN (6))
+    OR (f.environment_id = 5 AND f.key = 'dark_mode'       AND t.id IN (6))
+    OR (f.environment_id = 5 AND f.key = 'offline_sync'    AND t.id IN (6, 7));
+
+INSERT INTO config_tags (config_id, tag_id)
+SELECT c.id, t.id FROM configs c, tags t
+ WHERE (c.environment_id = 1 AND c.key = 'payment_rules'   AND t.id IN (1, 4))
+    OR (c.environment_id = 1 AND c.key = 'rollout_cohorts' AND t.id IN (2))
+    OR (c.environment_id = 1 AND c.key = 'feature_matrix'  AND t.id IN (4))
+    OR (c.environment_id = 1 AND c.key = 'escaping_check'  AND t.id IN (5))
+    OR (c.environment_id = 1 AND c.key = 'mixed_types'     AND t.id IN (5))
+    OR (c.environment_id = 2 AND c.key = 'payment_rules'   AND t.id IN (1, 4))
+    OR (c.environment_id = 4 AND c.key = 'api_endpoints'   AND t.id IN (7));

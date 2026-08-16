@@ -89,6 +89,63 @@
 {{end}}
 
 
+{{/* Search box plus tag chips. `target` is the panel the controls refresh. */}}
+{{define "filter_bar"}}
+<div class="filter-bar">
+  <form class="search" hx-get="{{.Base}}" hx-target="{{.Target}}" hx-swap="outerHTML"
+        hx-push-url="true"
+        hx-trigger="submit, keyup changed delay:250ms from:find input[name=q]">
+    <input type="hidden" name="tag" value="{{.Filter.Tag}}">
+    <input type="search" name="q" value="{{.Filter.Query}}" autocomplete="off"
+           placeholder="Search by name or tag…" aria-label="Search">
+  </form>
+
+  <div class="chips">
+    {{$b := .Base}}{{$t := .Target}}{{$f := .Filter}}
+    <button class="chip {{if not $f.Tag}}active{{end}}" type="button"
+            hx-get="{{$b}}{{$f.WithoutTag}}" hx-target="{{$t}}" hx-swap="outerHTML"
+            hx-push-url="true">All</button>
+    {{range .AllTags}}
+    <button class="chip {{if $f.IsTag .}}active{{end}}" type="button"
+            hx-get="{{$b}}{{$f.WithTag .}}" hx-target="{{$t}}" hx-swap="outerHTML"
+            hx-push-url="true">{{.}}</button>
+    {{end}}
+  </div>
+
+  {{if .Filter.Active}}
+  <button class="btn btn-ghost btn-sm" type="button"
+          hx-get="{{.Base}}" hx-target="{{.Target}}" hx-swap="outerHTML"
+          hx-push-url="true">Clear</button>
+  {{end}}
+</div>
+{{end}}
+
+
+{{/* Tag badges with a remove control, plus a one-field add form. Base is the
+     .../flags/{key} or .../configs/{key} prefix the forms act on.
+
+     The new tag travels as `name`, not `tag`: `tag` is already the filter
+     parameter, and the form has to carry the active filter so the re-rendered
+     panel shows the same view the user was looking at. */}}
+{{define "tag_cell"}}
+<div class="tag-cell">
+  {{$base := .Base}}{{$target := .Target}}{{$qs := .Filter.QueryString}}
+  {{range .Tags}}
+  <span class="tag">{{.}}<button type="button" title="Remove tag" aria-label="Remove tag {{.}}"
+        hx-delete="{{$base}}/tags/{{.}}{{$qs}}"
+        hx-target="{{$target}}" hx-swap="outerHTML">×</button></span>
+  {{end}}
+  <form class="tag-add" hx-post="{{.Base}}/tags" hx-target="{{.Target}}" hx-swap="outerHTML">
+    <input type="hidden" name="tag" value="{{.Filter.Tag}}">
+    <input type="hidden" name="q" value="{{.Filter.Query}}">
+    <input class="tag-input" name="name" placeholder="+ tag" autocomplete="off"
+           pattern="[a-z0-9][a-z0-9_-]{0,31}" title="lowercase letters, digits, - and _"
+           aria-label="Add tag">
+  </form>
+</div>
+{{end}}
+
+
 {{define "flags_panel"}}
 <div id="flags-panel">
   {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
@@ -105,19 +162,24 @@
       <input id="nf-desc" name="description" placeholder="optional" autocomplete="off">
     </div>
     <label class="field checkbox">
-      <input type="checkbox" name="enabled" value="1">
-      <span>Enabled</span>
+      <span class="switch">
+        <input type="checkbox" name="enabled" value="1">
+        <span class="slider"></span>
+      </span>
+      <span class="label-text">Enabled</span>
     </label>
     <button class="btn btn-primary" type="submit">Add flag</button>
   </form>
 
+  {{template "filter_bar" .}}
+
   <table class="data">
     <thead>
-      <tr><th>Key</th><th>State</th><th>Description</th><th>Version</th><th>Last change</th><th class="right">Actions</th></tr>
+      <tr><th>Key</th><th>State</th><th>Description</th><th>Tags</th><th>Version</th><th>Last change</th><th class="right">Actions</th></tr>
     </thead>
     <tbody>
       {{range .Rows}}{{template "flag_row" .}}{{else}}
-      <tr><td colspan="6" class="empty">No flags in this environment.</td></tr>
+      <tr><td colspan="7" class="empty">{{if .Filter.Active}}Nothing matches this filter.{{else}}No flags in this environment.{{end}}</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -141,6 +203,7 @@
     </label>
   </td>
   <td class="desc">{{.Flag.Description}}</td>
+  <td>{{template "tag_cell" .}}</td>
   <td><span class="badge">v{{.Flag.Version}}</span></td>
   <td class="muted">{{.Updated}}</td>
   <td class="right">
@@ -180,8 +243,10 @@
     <button class="btn btn-primary" type="submit">Add config</button>
   </form>
 
+  {{template "filter_bar" .}}
+
   {{range .Cards}}{{template "config_card" .}}{{else}}
-  <p class="empty">No configs in this environment.</p>
+  <p class="empty">{{if .Filter.Active}}Nothing matches this filter.{{else}}No configs in this environment.{{end}}</p>
   {{end}}
 </div>
 {{end}}
@@ -200,6 +265,8 @@
             hx-confirm="{{.Config.Key}} will be deleted. Are you sure?"
             hx-target="#configs-panel" hx-swap="outerHTML">Delete</button>
   </header>
+
+  {{template "tag_cell" .}}
 
   {{if .Error}}<div class="banner error">{{.Error}}</div>{{end}}
 
@@ -255,6 +322,7 @@
     <div class="key-value">
       <code>{{.NewKey}}</code>
       <button class="btn btn-sm" type="button" onclick="copyText(this, {{.NewKey}})">Copy</button>
+      <button class="btn btn-sm" type="button" onclick="copyCurl(this, {{.NewKey}})">Copy as curl</button>
     </div>
   </div>
   {{end}}
@@ -289,6 +357,8 @@
         <td class="muted">{{.Created}}</td>
         <td>{{if .Key.Active}}<span class="badge ok">active</span>{{else}}<span class="badge off">revoked · {{.Revoked}}</span>{{end}}</td>
         <td class="right">
+          <button class="btn btn-ghost btn-sm" type="button" onclick="copyCurlTemplate(this)"
+                  title="Copy a curl template. Only the key prefix is stored, so the key itself cannot be filled in — paste it where the placeholder is.">curl</button>
           {{if .Key.Active}}
           <button class="btn btn-danger btn-sm"
                   hx-post="/ui/p/{{.Project}}/{{.Env}}/keys/{{.Key.ID}}/revoke"

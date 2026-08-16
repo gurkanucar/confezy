@@ -99,12 +99,16 @@ func (s *Server) Register(mux *http.ServeMux) {
 	protected.HandleFunc("POST /ui/p/{slug}/{env}/flags", s.createFlag)
 	protected.HandleFunc("PUT /ui/p/{slug}/{env}/flags/{key}/toggle", s.toggleFlag)
 	protected.HandleFunc("DELETE /ui/p/{slug}/{env}/flags/{key}", s.deleteFlag)
+	protected.HandleFunc("POST /ui/p/{slug}/{env}/flags/{key}/tags", s.addFlagTag)
+	protected.HandleFunc("DELETE /ui/p/{slug}/{env}/flags/{key}/tags/{tag}", s.removeFlagTag)
 
 	// Configs.
 	protected.HandleFunc("GET /ui/p/{slug}/{env}/configs", s.configsPage)
 	protected.HandleFunc("POST /ui/p/{slug}/{env}/configs", s.createConfig)
 	protected.HandleFunc("PUT /ui/p/{slug}/{env}/configs/{key}", s.updateConfig)
 	protected.HandleFunc("DELETE /ui/p/{slug}/{env}/configs/{key}", s.deleteConfig)
+	protected.HandleFunc("POST /ui/p/{slug}/{env}/configs/{key}/tags", s.addConfigTag)
+	protected.HandleFunc("DELETE /ui/p/{slug}/{env}/configs/{key}/tags/{tag}", s.removeConfigTag)
 
 	// Snapshot (read-only view of what clients receive).
 	protected.HandleFunc("GET /ui/p/{slug}/{env}/snapshot", s.snapshotPage)
@@ -226,6 +230,22 @@ func (s *Server) renderPage(w http.ResponseWriter, status int, page string, data
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	w.Write(buf.Bytes())
+}
+
+// isHTMX reports whether the request came from htmx rather than a plain
+// navigation.
+func isHTMX(r *http.Request) bool { return r.Header.Get("HX-Request") == "true" }
+
+// renderListing answers a listing URL with the panel fragment for htmx and the
+// full page for a normal navigation. The filter controls point at the same URL
+// the address bar shows, so a filtered view stays shareable and reloadable —
+// without this the chips would swap an entire HTML document into the panel.
+func (s *Server) renderListing(w http.ResponseWriter, r *http.Request, page, fragment string, data any) {
+	if isHTMX(r) {
+		s.renderFragment(w, http.StatusOK, fragment, data)
+		return
+	}
+	s.renderPage(w, http.StatusOK, page, data)
 }
 
 func (s *Server) renderFragment(w http.ResponseWriter, status int, name string, data any) {

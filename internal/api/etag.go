@@ -13,6 +13,17 @@ func EnvETag(updatedAt int64) string {
 	return `"` + strconv.FormatInt(updatedAt, 10) + `"`
 }
 
+// FilteredETag is EnvETag for a narrowed response. The filter has to be part of
+// the validator: two different ?tag= values produce different bodies from the
+// same environment, and sharing one ETag between them would let a client cache
+// the wrong list behind a 304.
+func FilteredETag(updatedAt int64, tag string) string {
+	if tag == "" {
+		return EnvETag(updatedAt)
+	}
+	return `"` + strconv.FormatInt(updatedAt, 10) + "." + tag + `"`
+}
+
 // etagMatches reports whether an If-None-Match header covers etag. It accepts
 // the wildcard, comma-separated lists, and weak validators.
 func etagMatches(ifNoneMatch, etag string) bool {
@@ -32,9 +43,9 @@ func etagMatches(ifNoneMatch, etag string) bool {
 }
 
 // writeETag sets the validator headers and reports whether the handler should
-// stop early with a 304.
-func writeETag(w http.ResponseWriter, r *http.Request, updatedAt int64) bool {
-	etag := EnvETag(updatedAt)
+// stop early with a 304. tag is the ?tag= filter in effect, "" when none.
+func writeETag(w http.ResponseWriter, r *http.Request, updatedAt int64, tag string) bool {
+	etag := FilteredETag(updatedAt, tag)
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "no-cache")
 

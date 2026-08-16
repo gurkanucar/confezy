@@ -43,6 +43,7 @@ func ScopeAllows(have, want string) bool {
 var (
 	keyRe  = regexp.MustCompile(`^[a-z0-9_]{1,64}$`)
 	slugRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+	tagRe  = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
 )
 
 // ErrInvalidKey and friends are returned by the validators below so callers can
@@ -50,6 +51,7 @@ var (
 var (
 	ErrInvalidKey      = errors.New("key must match ^[a-z0-9_]{1,64}$")
 	ErrInvalidSlug     = errors.New("slug must match ^[a-z0-9][a-z0-9_-]{0,62}$")
+	ErrInvalidTag      = errors.New("tag must match ^[a-z0-9][a-z0-9_-]{0,31}$")
 	ErrInvalidUsername = errors.New("username must be 3-64 characters")
 	ErrInvalidPassword = errors.New("password must be at least 8 characters")
 )
@@ -59,6 +61,10 @@ func ValidKey(s string) bool { return keyRe.MatchString(s) }
 
 // ValidSlug reports whether s is a legal project or environment slug.
 func ValidSlug(s string) bool { return slugRe.MatchString(s) }
+
+// ValidTag reports whether s is a legal tag name. The character set is kept
+// tight partly because tag names end up inside ETag headers.
+func ValidTag(s string) bool { return tagRe.MatchString(s) }
 
 // MinPasswordLen is the shortest admin password accepted.
 const MinPasswordLen = 8
@@ -99,6 +105,16 @@ type Environment struct {
 	ProjectID int64
 	Slug      string
 	UpdatedAt int64
+	CreatedAt int64
+}
+
+// Tag is a project-wide label that can be attached to flags and configs. It
+// lives on the project rather than the environment so the same label does not
+// have to be recreated for prod, staging and dev.
+type Tag struct {
+	ID        int64
+	ProjectID int64
+	Name      string
 	CreatedAt int64
 }
 

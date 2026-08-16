@@ -120,6 +120,20 @@ function validateJSON(el) {
   }
 }
 
+// A ready-to-run request for the key that was just created. location.origin so
+// it matches however this panel is being reached.
+function copyCurl(btn, key) {
+  copyText(btn, 'curl -H "X-App-Key: ' + key + '" ' + window.location.origin + '/v1/snapshot');
+}
+
+// For a key that already exists only the prefix is stored, so the secret cannot
+// be put back into a command. Copy a template instead — with a placeholder the
+// shell will not silently expand, so pasting it reads as "fill this in" rather
+// than failing with an empty header.
+function copyCurlTemplate(btn) {
+  copyText(btn, 'curl -H "X-App-Key: <YOUR_API_KEY>" ' + window.location.origin + '/v1/snapshot');
+}
+
 function copyText(btn, text) {
   navigator.clipboard.writeText(text).then(function () {
     var old = btn.textContent;

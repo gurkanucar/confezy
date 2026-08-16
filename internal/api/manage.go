@@ -2,11 +2,13 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"confezy/internal/auth"
 	"confezy/internal/db"
@@ -33,6 +35,112 @@ func (m *Manage) Register(mux *http.ServeMux, requireWrite func(http.Handler) ht
 	handle("POST /v1/manage/configs", m.createConfig)
 	handle("PUT /v1/manage/configs/{key}", m.updateConfig)
 	handle("DELETE /v1/manage/configs/{key}", m.deleteConfig)
+
+	// Tags. Attaching is metadata, not a value change, so it does not move the
+	// record's version — but it does move the environment stamp, because it
+	// changes what a ?tag= request returns.
+	handle("POST /v1/manage/flags/{key}/tags", m.attachFlagTag)
+	handle("DELETE /v1/manage/flags/{key}/tags/{tag}", m.detachFlagTag)
+	handle("POST /v1/manage/configs/{key}/tags", m.attachConfigTag)
+	handle("DELETE /v1/manage/configs/{key}/tags/{tag}", m.detachConfigTag)
+	handle("DELETE /v1/manage/tags/{tag}", m.deleteTag)
+}
+
+type tagRequest struct {
+	Tag string `json:"tag"`
+}
+
+// attachTagHandler is shared by the flag and config endpoints, which differ
+// only in which db method they call.
+func (m *Manage) attachTagHandler(w http.ResponseWriter, r *http.Request,
+	attach func(ctx context.Context, envID int64, key, tag string) error, what string) {
+
+	ac, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+	var req tagRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	tag := strings.TrimSpace(req.Tag)
+	if !model.ValidTag(tag) {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidRequest, model.ErrInvalidTag.Error())
+		return
+	}
+
+	err := attach(r.Context(), ac.Environment.ID, r.PathValue("key"), tag)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, what+" not found")
+	case err != nil:
+		internalError(w, "attach tag", err)
+	default:
+		httpx.WriteJSON(w, http.StatusOK, map[string]any{"key": r.PathValue("key"), "tag": tag})
+	}
+}
+
+func (m *Manage) detachTagHandler(w http.ResponseWriter, r *http.Request,
+	detach func(ctx context.Context, envID int64, key, tag string) error, what string) {
+
+	ac, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+	tag := r.PathValue("tag")
+	if !model.ValidTag(tag) {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidRequest, model.ErrInvalidTag.Error())
+		return
+	}
+
+	err := detach(r.Context(), ac.Environment.ID, r.PathValue("key"), tag)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, what+" or tag not found")
+	case err != nil:
+		internalError(w, "detach tag", err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func (m *Manage) attachFlagTag(w http.ResponseWriter, r *http.Request) {
+	m.attachTagHandler(w, r, m.DB.AttachFlagTag, "flag")
+}
+
+func (m *Manage) detachFlagTag(w http.ResponseWriter, r *http.Request) {
+	m.detachTagHandler(w, r, m.DB.DetachFlagTag, "flag")
+}
+
+func (m *Manage) attachConfigTag(w http.ResponseWriter, r *http.Request) {
+	m.attachTagHandler(w, r, m.DB.AttachConfigTag, "config")
+}
+
+func (m *Manage) detachConfigTag(w http.ResponseWriter, r *http.Request) {
+	m.detachTagHandler(w, r, m.DB.DetachConfigTag, "config")
+}
+
+// deleteTag removes a tag from the whole project, detaching it everywhere.
+func (m *Manage) deleteTag(w http.ResponseWriter, r *http.Request) {
+	ac, ok := requireAuth(w, r)
+	if !ok {
+		return
+	}
+	tag := r.PathValue("tag")
+	if !model.ValidTag(tag) {
+		httpx.WriteError(w, http.StatusBadRequest, httpx.CodeInvalidRequest, model.ErrInvalidTag.Error())
+		return
+	}
+
+	err := m.DB.DeleteTag(r.Context(), ac.Environment.ProjectID, tag)
+	switch {
+	case errors.Is(err, db.ErrNotFound):
+		httpx.WriteError(w, http.StatusNotFound, httpx.CodeNotFound, "tag not found")
+	case err != nil:
+		internalError(w, "delete tag", err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
 }
 
 // Response shapes.
